@@ -17,6 +17,7 @@ import { IContentManager, ServiceContainer } from './types';
 import { LazyLoadingService } from './services/LazyLoadingService';
 import { ContentSegment } from '../processing/ProcessingStateManager';
 import { languageService } from '../core/translation/LanguageService';
+import { ParagraphTTSService } from './services/ParagraphTTSService';
 
 /**
  * 翻译显示状态管理器
@@ -196,6 +197,7 @@ export class ContentManager implements IContentManager {
   private listenerService?: ListenerService;
   private services?: ServiceContainer;
   private settings?: UserSettings;
+  private paragraphTTSService?: ParagraphTTSService;
   private translationStateManager?: TranslationStateManager;
   // 新增：存储检测到的页面语言
   private detectedPageLanguage?: string;
@@ -258,6 +260,7 @@ export class ContentManager implements IContentManager {
     try {
       this.listenerService?.destroy();
       this.services?.lazyLoadingService?.destroy();
+      this.paragraphTTSService?.destroy();
       console.log('[ContentManager] 服务已销毁');
     } catch (error) {
       console.error('[ContentManager] 销毁服务时出错:', error);
@@ -425,6 +428,10 @@ export class ContentManager implements IContentManager {
       floatingBallManager,
       this.translationStateManager,
     );
+
+    // 初始化段落TTS服务（双击朗读 + 高亮）
+    this.paragraphTTSService = new ParagraphTTSService();
+    this.paragraphTTSService.enable();
   }
 
   /**

@@ -18,6 +18,8 @@ import {
   OriginalWordDisplayMode,
   TranslationPosition,
   TranslationMode,
+  PronunciationTriggerMode,
+  TranslationTriggerMode,
 } from '../types/core';
 
 // 默认API配置
@@ -97,4 +99,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   apiRequestTimeout: 0, // 无限制超时
   customTranslationCSS: '',
   lazyLoading: DEFAULT_LAZY_LOADING_CONFIG,
+  // 新增默认设置
+  ttsProvider: 'google', // 默认使用Google TTS
+  pronunciationTriggerMode: PronunciationTriggerMode.CLICK, // 默认点击触发
+  translationTriggerMode: TranslationTriggerMode.AUTO, // 默认自动翻译
 };

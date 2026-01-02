@@ -6,6 +6,7 @@
 import { ITTSProvider, TTSProviderConfig } from './ITTSProvider';
 import { WebSpeechTTSProvider } from './WebSpeechTTSProvider';
 import { YoudaoTTSProvider } from './YoudaoTTSProvider';
+import { GoogleTTSProvider } from './GoogleTTSProvider';
 import { TTSProviderType } from '../types';
 
 export class TTSProviderFactory {
@@ -20,6 +21,9 @@ export class TTSProviderFactory {
     config?: TTSProviderConfig,
   ): ITTSProvider {
     switch (providerType) {
+      case 'google':
+        return new GoogleTTSProvider(config);
+
       case 'web-speech':
         return new WebSpeechTTSProvider(config);
 
@@ -35,7 +39,7 @@ export class TTSProviderFactory {
    * 获取所有支持的提供者类型
    */
   static getSupportedProviders(): TTSProviderType[] {
-    return ['web-speech', 'youdao'];
+    return ['google', 'web-speech', 'youdao'];
   }
 
   /**
@@ -56,6 +60,7 @@ export class TTSProviderFactory {
    */
   static getProviderDisplayName(providerType: TTSProviderType): string {
     const displayNames: Record<TTSProviderType, string> = {
+      google: 'Google翻译',
       'web-speech': '浏览器语音',
       youdao: '有道词典',
     };
@@ -69,6 +74,7 @@ export class TTSProviderFactory {
    */
   static getProviderDescription(providerType: TTSProviderType): string {
     const descriptions: Record<TTSProviderType, string> = {
+      google: '使用Google翻译语音服务，音质清晰自然',
       'web-speech': '使用浏览器内置的语音合成功能，支持多种语言和语音',
       youdao: '使用有道词典的在线语音服务，支持美式和英式发音',
     };

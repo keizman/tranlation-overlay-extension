@@ -9,7 +9,7 @@ export interface TTSResult {
 }
 
 // TTS提供者类型
-export type TTSProviderType = 'web-speech' | 'youdao';
+export type TTSProviderType = 'web-speech' | 'youdao' | 'google';
 
 // TTS提供者状态
 export interface TTSProviderStatus {

@@ -43,6 +43,8 @@ export class OpenAIProvider extends BaseProvider {
         },
       ],
       temperature: this.config.temperature,
+      // Extension metadata for server-side caching (removed before forwarding to LLM)
+      x_user_level: settings.userLevel,
     };
 
     if (this.config.includeThinkingParam) {
@@ -62,17 +64,48 @@ export class OpenAIProvider extends BaseProvider {
       return sendApiRequest(requestBody, this.config, timeout);
     };
 
-    const [response] = await rateLimiter.executeBatch([apiRequestFunction]);
+    // Retry logic: 3 attempts with 500ms delay
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 500;
+    let lastError: Error | null = null;
 
-    if (!response.ok) {
-      console.error(`API 请求失败: ${response.status} ${response.statusText}`);
-      throw new Error(
-        `API 请求失败: ${response.status} ${response.statusText}`,
-      );
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const [response] = await rateLimiter.executeBatch([apiRequestFunction]);
+
+        if (response.ok) {
+          const data = await response.json();
+          return this.extractReplacements(data, text);
+        }
+
+        // Non-200 response
+        console.warn(
+          `[OpenAI] 请求失败 (尝试 ${attempt + 1}/${MAX_RETRIES}): ${response.status} ${response.statusText}`,
+        );
+        lastError = new Error(
+          `API 请求失败: ${response.status} ${response.statusText}`,
+        );
+
+        // Wait before retry (except for last attempt)
+        if (attempt < MAX_RETRIES - 1) {
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        }
+      } catch (error: any) {
+        console.warn(
+          `[OpenAI] 请求异常 (尝试 ${attempt + 1}/${MAX_RETRIES}):`,
+          error.message,
+        );
+        lastError = error;
+
+        if (attempt < MAX_RETRIES - 1) {
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        }
+      }
     }
 
-    const data = await response.json();
-    return this.extractReplacements(data, text);
+    // All retries failed
+    console.error(`[OpenAI] 所有 ${MAX_RETRIES} 次重试均失败`);
+    throw lastError || new Error('API 请求失败');
   }
 
   /**

@@ -24,7 +24,7 @@ export interface SegmenterConfig {
 }
 
 const DEFAULT_CONFIG: SegmenterConfig = {
-  maxSegmentLength: 400,
+  maxSegmentLength: 500,
   minSegmentLength: 20,
   enableSmartBoundary: true,
   mergeSmallSegments: true,

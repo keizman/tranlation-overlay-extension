@@ -81,6 +81,19 @@ export enum TranslationMode {
   PARAGRAPH = 'paragraph', // 段落翻译模式（新增）
 }
 
+// 发音触发模式枚举
+export enum PronunciationTriggerMode {
+  HOVER = 'hover', // 悬停触发
+  CLICK = 'click', // 点击触发
+}
+
+// 翻译触发模式枚举
+export enum TranslationTriggerMode {
+  AUTO = 'auto', // 自动全文翻译
+  BUTTON = 'button', // 点击按钮翻译
+  SWIPE = 'swipe', // 右滑单段翻译
+}
+
 // 翻译服务提供商枚举
 export enum TranslationProvider {
   OpenAI = 'OpenAI',

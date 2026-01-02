@@ -10,12 +10,15 @@ import type {
   OriginalWordDisplayMode,
   TranslationPosition,
   TranslationMode,
+  PronunciationTriggerMode,
+  TranslationTriggerMode,
   ContextMenuActionType,
   UrlPatternType,
   LazyLoadingConfig,
 } from './core';
 import type { ApiConfigItem, MultilingualConfig } from './api';
 import type { TooltipHotkey, FloatingBallConfig } from './ui';
+import type { TTSProviderType } from '../../pronunciation/types';
 
 // 用户设置主接口
 export interface UserSettings {
@@ -48,6 +51,12 @@ export interface UserSettings {
   customTranslationCSS: string;
   // 新增：懒加载配置
   lazyLoading: LazyLoadingConfig;
+  // 新增：TTS提供者类型
+  ttsProvider: TTSProviderType;
+  // 新增：发音触发模式
+  pronunciationTriggerMode: PronunciationTriggerMode;
+  // 新增：翻译触发模式
+  translationTriggerMode: TranslationTriggerMode;
 }
 
 // 右键菜单消息接口

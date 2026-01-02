@@ -17,13 +17,13 @@ export default defineConfig({
   modules: ['@wxt-dev/module-vue'],
   manifest: {
     name: '浸入式学语言助手(illa-helper)',
-    author: {
-      email: 'xiao1932794922@gmail.com',
-    },
+    author: 'xiao1932794922@gmail.com', // Firefox requires string, not object
     description: `浸入式学语言助手(illa-helper) extension turns browsing into language learning. AI uses "i+1" theory, supports 20+ languages.`,
     version,
-    permissions: ['storage', 'notifications', 'contextMenus', 'activeTab', 'webNavigation'],
+    // contextMenus not supported on Firefox Android, use only common permissions
+    permissions: ['storage', 'notifications', 'activeTab', 'webNavigation'],
     host_permissions: ['<all_urls>', 'https://api.github.com/*'],
+    // commands not fully supported on Firefox Android, but kept for desktop
     commands: {
       'translate-page': {
         suggested_key: {
