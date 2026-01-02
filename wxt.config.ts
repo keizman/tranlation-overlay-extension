@@ -17,7 +17,7 @@ export default defineConfig({
   modules: ['@wxt-dev/module-vue'],
   manifest: {
     name: '浸入式学语言助手(illa-helper)',
-    author: 'xiao1932794922@gmail.com', // Firefox requires string, not object
+    author: 'xiao1932794922@gmail.com' as any, // Firefox requires string, not object (WXT type mismatch)
     description: `浸入式学语言助手(illa-helper) extension turns browsing into language learning. AI uses "i+1" theory, supports 20+ languages.`,
     version,
     // contextMenus not supported on Firefox Android, use only common permissions
