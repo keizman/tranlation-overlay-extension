@@ -88,9 +88,34 @@ export class GoogleGeminiProvider extends BaseProvider {
       throw new Error(`结构化文本解析失败: ${parseResult.errors.join(', ')}`);
     }
 
+    // 方案D: 过滤掉不以完整单词形式出现在原文中的翻译项
+    const validatedReplacements = parseResult.replacements.filter((rep) => {
+      if (!rep.original || rep.original.length < 2) {
+        console.warn('[Gemini] 过滤掉过短的原文:', rep.original);
+        return false;
+      }
+      // 转义正则特殊字符
+      const escapedOriginal = rep.original.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        '\\$&',
+      );
+      // 使用单词边界检查原文是否以完整单词形式存在
+      const wordBoundaryRegex = new RegExp(`\\b${escapedOriginal}\\b`, 'i');
+      const isValid = wordBoundaryRegex.test(text);
+      if (!isValid) {
+        console.warn(
+          '[Gemini] 过滤掉非完整单词匹配:',
+          rep.original,
+          '->',
+          rep.translation,
+        );
+      }
+      return isValid;
+    });
+
     const replacements = addPositionsToReplacements(
       text,
-      parseResult.replacements,
+      validatedReplacements,
     );
 
     return {

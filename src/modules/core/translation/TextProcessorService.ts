@@ -244,7 +244,7 @@ export class TextProcessorService {
     root: Node,
     textReplacer: any,
     originalWordDisplayMode: OriginalWordDisplayMode,
-    maxLength: number = 400,
+    maxLength: number = 2000,
     translationPosition: TranslationPosition,
     showParentheses: boolean,
   ): Promise<void> {
@@ -252,7 +252,7 @@ export class TextProcessorService {
       // 更新内容分段器配置
       this.updateSegmentConfig({
         maxSegmentLength: maxLength,
-        minSegmentLength: 20,
+        minSegmentLength: 80,
         enableSmartBoundary: true,
         mergeSmallSegments: true,
       });

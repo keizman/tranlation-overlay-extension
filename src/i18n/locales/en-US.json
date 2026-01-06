@@ -4,7 +4,10 @@
   },
   "common": {
     "tip": "💡",
-    "new": "NEW"
+    "new": "NEW",
+    "save": "Save",
+    "cancel": "Cancel",
+    "saved": "Saved successfully"
   },
   "errors": {
     "getExtensionVersion": "Failed to get extension version",
@@ -469,7 +472,54 @@
       "data": "Import/Export",
       "dataDescription": "Configuration backup and recovery",
       "about": "About",
-      "aboutDescription": "Version information and help"
+      "aboutDescription": "Version information and help",
+      "tts": "TTS Service",
+      "ttsDescription": "Full-text TTS reading configuration"
+    }
+  },
+  "ttsSettings": {
+    "title": "TTS Service Settings",
+    "barToggle": {
+      "title": "Full-Text TTS Bar",
+      "description": "Enable bottom toolbar for full-text reading with Google Cloud TTS"
+    },
+    "apiConfig": {
+      "title": "TTS API Configuration",
+      "description": "Configure your Google Cloud TTS API key",
+      "manage": "Manage"
+    },
+    "currentConfig": {
+      "title": "Current Configuration",
+      "name": "Name",
+      "endpoint": "Endpoint",
+      "apiKey": "API Key",
+      "notConfigured": "Not configured"
+    },
+    "noConfig": {
+      "message": "No TTS configuration yet",
+      "addConfig": "Add Configuration"
+    },
+    "configManager": {
+      "title": "TTS Configuration Manager",
+      "editConfig": "Edit Configuration",
+      "currentActive": "Current Active Configuration",
+      "selectConfig": "Select a configuration",
+      "manageConfigs": "Manage Configurations",
+      "addConfig": "Add Configuration",
+      "newConfigName": "New TTS Config",
+      "noConfigs": "No configurations yet"
+    },
+    "configEditor": {
+      "configName": "Configuration Name",
+      "configNamePlaceholder": "Enter configuration name",
+      "apiEndpoint": "API Endpoint",
+      "endpointHint": "Default Google Cloud TTS endpoint, supports custom proxy",
+      "apiKey": "API Key",
+      "customParams": "Custom Parameters (Optional)",
+      "customParamsHint": "Optional additional JSON parameters for voice, audio config, etc.",
+      "testConnection": "Test Connection",
+      "testSuccess": "Connection successful!",
+      "testFailed": "Connection failed"
     }
   }
 }

@@ -102,9 +102,10 @@ import {
   Download,
   Info,
   Keyboard,
+  Volume2,
 } from 'lucide-vue-next';
 import NavigationGroup from './NavigationGroup.vue';
-import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
@@ -159,6 +160,12 @@ const advancedFeatures = computed<NavigationItem[]>(() => [
     label: t('options.navigation.translation'),
     icon: Languages,
     description: t('options.navigation.translationDescription'),
+  },
+  {
+    key: 'tts',
+    label: t('options.navigation.tts'),
+    icon: Volume2,
+    description: t('options.navigation.ttsDescription'),
   },
 ]);
 

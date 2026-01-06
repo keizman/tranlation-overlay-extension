@@ -32,7 +32,8 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
   temperature: parseFloat(import.meta.env.VITE_WXT_DEFAULT_TEMPERATURE) || 0,
   enable_thinking: false,
   includeThinkingParam: false,
-  customParams: '',
+  // 自定义参数 - 支持从环境变量加载
+  customParams: import.meta.env.VITE_WXT_DEFAULT_CUSTOM_PARAMS || '',
   phraseEnabled: true,
   requestsPerSecond: 0, // 默认无限制，0表示不限制
   useBackgroundProxy: false, // 默认不使用background代理，保持向后兼容
@@ -88,7 +89,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   translationStyle: TranslationStyle.DEFAULT,
   translationMode: TranslationMode.WORD,
   triggerMode: TriggerMode.MANUAL,
-  maxLength: 400,
+  maxLength: 2000,
+  minLength: 80, // 默认最小处理长度
   originalWordDisplayMode: OriginalWordDisplayMode.VISIBLE,
   enablePronunciationTooltip: true,
   multilingualConfig: DEFAULT_MULTILINGUAL_CONFIG,
@@ -103,4 +105,10 @@ export const DEFAULT_SETTINGS: UserSettings = {
   ttsProvider: 'google', // 默认使用Google TTS
   pronunciationTriggerMode: PronunciationTriggerMode.CLICK, // 默认点击触发
   translationTriggerMode: TranslationTriggerMode.AUTO, // 默认自动翻译
+  showDebugPanel: true, // 临时开启调试面板
+  // 全文TTS设置
+  enableFullTextTTSBar: false, // 默认关闭底栏
+  fullTextTTSBarCollapsed: true, // 默认折叠状态
+  fullTextTTSConfigs: [], // 默认无配置
+  activeFullTextTTSConfigId: '', // 默认无激活配置
 };

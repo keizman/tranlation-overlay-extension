@@ -56,6 +56,7 @@ export class PromptService {
 4. Output ONLY the selected original||translation pairs. Rigorous ban on any additions, explanations, or prefixes (e.g., no 'Here is the translation:').
 5. Output that does not meet the requirements, directly return the empty string.
 6. Consider the context of the text when translating.
+7. original text must be complete words or phrases as they appear in the original text (e.g., "r||translate" from "raised" - WRONG)
 `;
   }
 

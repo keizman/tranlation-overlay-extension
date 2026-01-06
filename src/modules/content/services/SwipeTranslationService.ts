@@ -159,18 +159,58 @@ export class SwipeTranslationService {
 
   /**
    * 处理滑动动作 - 切换模式
-   * 首次右滑：翻译
-   * 再次右滑：恢复原始
+   * 情况1：无翻译 -> 触发翻译
+   * 情况2：有翻译（自动或滑动触发） -> 隐藏/恢复翻译
    */
   private async handleSwipeAction(element: HTMLElement): Promise<void> {
-    const isTranslated = element.hasAttribute(TRANSLATED_ATTR);
+    // 检查是否由滑动触发的翻译
+    const isSwipeTranslated = element.hasAttribute(TRANSLATED_ATTR);
 
-    if (isTranslated) {
-      // 已翻译 -> 恢复原始
+    // 检查是否存在自动翻译的内容（通过自动翻译模式添加的翻译标注）
+    const translationTerms = element.querySelectorAll('.wxt-translation-term');
+    const hasAutoTranslations = translationTerms.length > 0;
+
+    // 检查自动翻译是否已被隐藏
+    const isTranslationHidden =
+      hasAutoTranslations &&
+      (translationTerms[0] as HTMLElement).style.display === 'none';
+
+    if (isSwipeTranslated) {
+      // 滑动翻译的段落 -> 恢复原始（移除所有翻译）
       this.restoreOriginal(element);
+    } else if (hasAutoTranslations) {
+      // 有自动翻译 -> 切换翻译可见性
+      this.toggleTranslationVisibility(
+        element,
+        translationTerms,
+        isTranslationHidden,
+      );
     } else {
-      // 未翻译 -> 执行翻译
+      // 无翻译 -> 执行翻译
       await this.triggerTranslation(element);
+    }
+  }
+
+  /**
+   * 切换翻译可见性（用于自动翻译的段落）
+   */
+  private toggleTranslationVisibility(
+    element: HTMLElement,
+    translationTerms: NodeListOf<Element>,
+    isCurrentlyHidden: boolean,
+  ): void {
+    const newDisplay = isCurrentlyHidden ? '' : 'none';
+
+    translationTerms.forEach((term) => {
+      (term as HTMLElement).style.display = newDisplay;
+    });
+
+    if (isCurrentlyHidden) {
+      element.classList.remove('wxt-translations-hidden');
+      console.log('[SwipeTranslation] 已显示翻译');
+    } else {
+      element.classList.add('wxt-translations-hidden');
+      console.log('[SwipeTranslation] 已隐藏翻译');
     }
   }
 

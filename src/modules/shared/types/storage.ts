@@ -33,6 +33,7 @@ export interface UserSettings {
   translationMode: TranslationMode;
   triggerMode: TriggerMode;
   maxLength?: number;
+  minLength?: number; // 最小处理长度
   originalWordDisplayMode: OriginalWordDisplayMode;
   enablePronunciationTooltip: boolean;
   // 新增：多语言智能翻译设置
@@ -57,6 +58,13 @@ export interface UserSettings {
   pronunciationTriggerMode: PronunciationTriggerMode;
   // 新增：翻译触发模式
   translationTriggerMode: TranslationTriggerMode;
+  // 调试日志面板显示
+  showDebugPanel?: boolean;
+  // 新增：全文TTS设置
+  enableFullTextTTSBar: boolean; // 底栏开关
+  fullTextTTSBarCollapsed: boolean; // 底栏是否折叠 (刷新后保持)
+  fullTextTTSConfigs: import('./fullTextTTS').FullTextTTSConfigItem[]; // TTS配置列表
+  activeFullTextTTSConfigId: string; // 当前激活的配置ID
 }
 
 // 右键菜单消息接口

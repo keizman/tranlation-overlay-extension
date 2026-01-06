@@ -347,6 +347,16 @@
           />
         </div>
         <div class="space-y-2">
+          <Label for="min-length">{{ $t('basicSettings.minLength') }}</Label>
+          <Input
+            id="min-length"
+            type="number"
+            :model-value="settings.minLength"
+            @update:model-value="settings.minLength = Number($event)"
+            placeholder="10"
+          />
+        </div>
+        <div class="space-y-2">
           <Label for="user-level">{{ $t('basicSettings.userLevel') }}</Label>
           <Select
             id="user-level"

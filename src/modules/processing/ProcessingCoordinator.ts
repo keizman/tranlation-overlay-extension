@@ -11,6 +11,182 @@ import {
   OriginalWordDisplayMode,
   TranslationPosition,
 } from '../shared/types/core';
+import { createModuleLogger } from '../shared/utils/DebugLogger';
+
+// Word TTS 专用日志
+const wordTTSLog = createModuleLogger('WordTTS');
+
+// ==================== AudioContext 单例管理 ====================
+
+/**
+ * 全局 AudioContext 单例
+ * 避免每次播放都创建/销毁，减少音频系统初始化开销
+ */
+let globalAudioContext: AudioContext | null = null;
+let isAudioContextWarmedUp = false;
+
+/**
+ * 获取全局 AudioContext 单例
+ * 如果不存在则创建，如果已关闭则重新创建
+ */
+function getGlobalAudioContext(): AudioContext {
+  if (!globalAudioContext || globalAudioContext.state === 'closed') {
+    const AudioContextClass =
+      (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) {
+      throw new Error('AudioContext not supported');
+    }
+    const newContext = new AudioContextClass();
+    globalAudioContext = newContext;
+    wordTTSLog.log('AudioContext 单例已创建, state:', newContext.state);
+    return newContext;
+  }
+  return globalAudioContext;
+}
+
+/**
+ * 预热 Word TTS 音频系统（单例版本）
+ * 只在首次调用时真正预热，后续调用只确保 AudioContext 处于运行状态
+ */
+async function warmUpWordTTSAudio(): Promise<void> {
+  try {
+    const audioContext = getGlobalAudioContext();
+
+    // 如果 AudioContext 被挂起（常见于移动端），需要恢复
+    if (audioContext.state === 'suspended') {
+      wordTTSLog.log('AudioContext 被挂起，正在恢复...');
+      await audioContext.resume();
+      wordTTSLog.log('AudioContext 已恢复, state:', audioContext.state);
+    }
+
+    // 只在首次预热时播放静音音频
+    if (!isAudioContextWarmedUp) {
+      wordTTSLog.log('首次预热音频系统...');
+
+      // 播放一段极短的静音来激活音频管道
+      const buffer = audioContext.createBuffer(
+        1,
+        audioContext.sampleRate * 0.01,
+        audioContext.sampleRate,
+      ); // 10ms 静音
+      const source = audioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioContext.destination);
+      source.start(0);
+
+      isAudioContextWarmedUp = true;
+      wordTTSLog.log('🔊 音频系统预热完成');
+    }
+  } catch (err) {
+    wordTTSLog.warn('音频预热失败:', err);
+  }
+}
+
+/**
+ * 使用 Web Audio API 播放音频 Blob
+ * 比 HTML5 Audio 元素有更低的延迟和更精细的控制
+ */
+async function playAudioWithWebAudioAPI(blob: Blob): Promise<void> {
+  const audioContext = getGlobalAudioContext();
+
+  // 确保 AudioContext 处于运行状态
+  if (audioContext.state === 'suspended') {
+    await audioContext.resume();
+  }
+
+  // 将 Blob 转换为 ArrayBuffer
+  const arrayBuffer = await blob.arrayBuffer();
+
+  // 解码音频数据
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+  // 创建音频源并播放
+  const source = audioContext.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(audioContext.destination);
+
+  return new Promise((resolve, reject) => {
+    source.onended = () => {
+      wordTTSLog.log('Web Audio API 播放结束');
+      resolve();
+    };
+    source.start(0);
+    wordTTSLog.log('Web Audio API 开始播放');
+  });
+}
+
+// Word TTS 事件委托是否已设置
+let isWordTTSEventDelegationSetup = false;
+
+/**
+ * 设置 Word TTS 事件委托
+ * 使用 document 级别的事件监听，这样即使 DOM 被修改（如 WordHighlighter），
+ * 点击事件仍然能被捕获并处理
+ */
+function setupWordTTSEventDelegation(): void {
+  if (isWordTTSEventDelegationSetup) return;
+  isWordTTSEventDelegationSetup = true;
+
+  document.addEventListener(
+    'click',
+    async (e) => {
+      const target = e.target as HTMLElement;
+
+      // 使用 closest 查找最近的 wxt-original-word 元素
+      const wordElement = target.closest(
+        '.wxt-original-word',
+      ) as HTMLElement | null;
+
+      if (!wordElement) return;
+
+      // 找到了 Word TTS 目标元素
+      e.preventDefault();
+      e.stopPropagation();
+
+      const wordToSpeak =
+        wordElement.getAttribute('data-wxt-original-word') ||
+        wordElement.textContent ||
+        '';
+      if (!wordToSpeak) return;
+
+      wordTTSLog.log('Word TTS (委托):', wordToSpeak);
+
+      // 使用 Google TTS 代理 API
+      const GOOGLE_TTS_BASE_URL =
+        'https://translate.planktonfly.com/translate_tts';
+      const GOOGLE_TTS_AUTH = 'Basic bXl1c2VyOjEyMzQ1NjY=';
+      const audioUrl = `${GOOGLE_TTS_BASE_URL}?ie=UTF-8&client=gtx&tl=en-US&q=${encodeURIComponent(wordToSpeak)}`;
+
+      try {
+        // 1. 先预热音频系统
+        await warmUpWordTTSAudio();
+
+        // 2. 下载音频
+        wordTTSLog.log('开始 fetch...');
+        const response = await fetch(audioUrl, {
+          method: 'GET',
+          headers: {
+            'X-Proxy-Target': 'google',
+            Authorization: GOOGLE_TTS_AUTH,
+          },
+        });
+
+        if (response.ok) {
+          const blob = await response.blob();
+          wordTTSLog.log('下载完成, Blob:', blob.size, 'bytes');
+          await playAudioWithWebAudioAPI(blob);
+        } else {
+          wordTTSLog.error('Request failed:', response.status);
+        }
+      } catch (error) {
+        wordTTSLog.error('Error:', error);
+      }
+    },
+    true,
+  ); // 使用捕获阶段，确保在其他处理器之前执行
+
+  wordTTSLog.log('Word TTS 事件委托已设置');
+}
 
 /**
  * 处理结果接口
@@ -66,6 +242,9 @@ export class ProcessingCoordinator {
 
   constructor(pronunciationService?: any) {
     this.pronunciationService = pronunciationService;
+
+    // 设置 Word TTS 事件委托（document 级别），确保即使 DOM 被修改也能正常工作
+    setupWordTTSEventDelegation();
   }
 
   /**
@@ -319,35 +498,34 @@ export class ProcessingCoordinator {
       .map((node) => node.textContent || '')
       .join('');
 
-    // 预验证：检查所有替换项的位置是否准确
-    const validReplacements = replacements.filter((replacement) => {
-      if (!replacement.position) {
-        return false;
-      }
+    // ✅ 关键一致性检查
+    const textMismatch = segment.textContent !== reconstructedText;
+    if (textMismatch) {
+      console.error('[TranslationDebug] ❌ segment与DOM不一致!', {
+        segmentLen: segment.textContent?.length,
+        domLen: reconstructedText.length,
+      });
+    }
 
-      // 验证位置与实际文本内容的匹配（使用重构的文本）
-      const { start, end } = replacement.position;
-      const expectedText = replacement.original;
-      const actualText = reconstructedText.substring(start, end);
+    // 🔄 如果文本不一致，或者要确保准确性，重新计算所有位置
+    // 使用当前 DOM 的实际文本内容
+    const recalculatedReplacements = this.recalculatePositions(
+      reconstructedText,
+      replacements,
+    );
 
-      if (expectedText !== actualText) {
-        // 尝试重新定位
-        const correctIndex = reconstructedText.indexOf(expectedText);
-        if (correctIndex !== -1) {
-          replacement.position = {
-            start: correctIndex,
-            end: correctIndex + expectedText.length,
-          };
-          return true;
-        }
-        return false;
-      }
-      return true;
-    });
+    // 打印所有替换项（简洁格式）
+    console.log(
+      '[TranslationDebug] 替换项:',
+      recalculatedReplacements
+        .map((r, i) => `${i}:"${r.original}"@${r.position?.start}`)
+        .join(', '),
+    );
 
-    // 对验证通过的替换项按位置倒序处理（避免位置偏移影响）
-    const sortedReplacements = validReplacements.sort(
-      (a, b) => b.position.start - a.position.start,
+    // 直接使用重新计算的位置（recalculatePositions 已确保位置正确）
+    // 按位置倒序处理（避免位置偏移影响）
+    const sortedReplacements = recalculatedReplacements.sort(
+      (a: any, b: any) => b.position.start - a.position.start,
     );
 
     for (const replacement of sortedReplacements) {
@@ -368,6 +546,59 @@ export class ProcessingCoordinator {
         );
       }
     }
+  }
+
+  /**
+   * 重新计算所有替换项的位置
+   * 基于当前 DOM 实际文本内容，完全重新定位
+   */
+  private recalculatePositions(
+    currentText: string,
+    replacements: any[],
+  ): any[] {
+    const result: any[] = [];
+    const usedRanges: Array<{ start: number; end: number }> = [];
+
+    for (const rep of replacements) {
+      if (!rep.original || !rep.translation) continue;
+
+      let searchStart = 0;
+      let found = false;
+
+      while (searchStart < currentText.length) {
+        const index = currentText.indexOf(rep.original, searchStart);
+        if (index === -1) break;
+
+        const candidateStart = index;
+        const candidateEnd = index + rep.original.length;
+
+        // 检查是否与已使用的范围重叠
+        const hasOverlap = usedRanges.some(
+          (range) => candidateStart < range.end && range.start < candidateEnd,
+        );
+
+        if (!hasOverlap) {
+          const foundText = currentText.substring(candidateStart, candidateEnd);
+          if (foundText === rep.original) {
+            result.push({
+              ...rep,
+              position: { start: candidateStart, end: candidateEnd },
+            });
+            usedRanges.push({ start: candidateStart, end: candidateEnd });
+            found = true;
+            break;
+          }
+        }
+
+        searchStart = index + 1;
+      }
+
+      if (!found) {
+        console.warn(`[TranslationDebug] 重计算失败: "${rep.original}"`);
+      }
+    }
+
+    return result.sort((a, b) => a.position.start - b.position.start);
   }
 
   /**
@@ -444,6 +675,14 @@ export class ProcessingCoordinator {
       originalWordWrapper.className = 'wxt-original-word';
       originalWordWrapper.textContent = range.toString();
 
+      // 保存原文用于TTS
+      originalWordWrapper.setAttribute(
+        'data-wxt-original-word',
+        replacement.original,
+      );
+      // 添加可点击样式指示
+      originalWordWrapper.style.cursor = 'pointer';
+
       const translationSpan = document.createElement('span');
       translationSpan.className = `wxt-translation-term ${styleManager.getCurrentStyleClass()}`;
 
@@ -466,6 +705,9 @@ export class ProcessingCoordinator {
           originalWordWrapper.classList.add('wxt-original-word--learning');
           break;
       }
+
+      // Word TTS 现在由 document 级别的事件委托处理（setupWordTTSEventDelegation）
+      // 不需要在这里添加 addEventListener，这样即使 DOM 被修改也能正常工作
 
       // 插入替换元素
       range.surroundContents(originalWordWrapper);

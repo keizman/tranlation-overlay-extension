@@ -86,8 +86,8 @@ export class ProcessingService implements IProcessingService {
         '../../processing/ContentSegmenter'
       );
       const contentSegmenter = new ContentSegmenter({
-        maxSegmentLength: this.processingParams.maxLength || 400,
-        minSegmentLength: 20,
+        maxSegmentLength: this.processingParams.maxLength || 2000,
+        minSegmentLength: this.processingParams.minLength || 80,
         enableSmartBoundary: true,
         mergeSmallSegments: true,
       });
@@ -197,6 +197,7 @@ export class ProcessingService implements IProcessingService {
     this.processingParams = {
       originalWordDisplayMode: settings.originalWordDisplayMode,
       maxLength: settings.maxLength,
+      minLength: settings.minLength,
       translationPosition: settings.translationPosition,
       showParentheses: settings.showParentheses,
     };

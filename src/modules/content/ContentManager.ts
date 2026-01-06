@@ -18,6 +18,11 @@ import { LazyLoadingService } from './services/LazyLoadingService';
 import { ContentSegment } from '../processing/ProcessingStateManager';
 import { languageService } from '../core/translation/LanguageService';
 import { ParagraphTTSService } from './services/ParagraphTTSService';
+import { SwipeTranslationService } from './services/SwipeTranslationService';
+import {
+  getFullTextTTSBarManager,
+  destroyFullTextTTSBarManager,
+} from '../floatingBar';
 
 /**
  * 翻译显示状态管理器
@@ -198,6 +203,7 @@ export class ContentManager implements IContentManager {
   private services?: ServiceContainer;
   private settings?: UserSettings;
   private paragraphTTSService?: ParagraphTTSService;
+  private swipeTranslationService?: SwipeTranslationService;
   private translationStateManager?: TranslationStateManager;
   // 新增：存储检测到的页面语言
   private detectedPageLanguage?: string;
@@ -261,6 +267,8 @@ export class ContentManager implements IContentManager {
       this.listenerService?.destroy();
       this.services?.lazyLoadingService?.destroy();
       this.paragraphTTSService?.destroy();
+      this.swipeTranslationService?.destroy();
+      destroyFullTextTTSBarManager();
       console.log('[ContentManager] 服务已销毁');
     } catch (error) {
       console.error('[ContentManager] 销毁服务时出错:', error);
@@ -430,8 +438,25 @@ export class ContentManager implements IContentManager {
     );
 
     // 初始化段落TTS服务（双击朗读 + 高亮）
-    this.paragraphTTSService = new ParagraphTTSService();
+    this.paragraphTTSService = new ParagraphTTSService({
+      showDebugPanel: this.settings.showDebugPanel ?? false,
+    });
     this.paragraphTTSService.enable();
+
+    // 初始化滑动翻译服务（右滑翻译/恢复切换）
+    // 无论何种触发模式都启用，支持：
+    // - 无翻译段落：右滑触发翻译
+    // - 有翻译段落：右滑切换翻译显示/隐藏
+    this.swipeTranslationService = new SwipeTranslationService();
+    this.swipeTranslationService.enable(async (element: HTMLElement) => {
+      // 使用processingService处理单个节点
+      await this.processingService?.processNode(element);
+    });
+    console.log('[ContentManager] 滑动翻译已启用');
+
+    // 初始化全文TTS底栏
+    const ttsBarManager = getFullTextTTSBarManager();
+    await ttsBarManager.init(optimizedSettings);
   }
 
   /**

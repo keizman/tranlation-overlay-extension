@@ -219,6 +219,26 @@ export async function testOpenAICompatibleConnection(
 
     let response: Response;
 
+    // 构建请求头 - 从 customParams 提取 site_auth 和 site_api
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiConfig.apiKey}`,
+    };
+
+    if (apiConfig.customParams) {
+      try {
+        const customParams = JSON.parse(apiConfig.customParams);
+        if (customParams.site_auth) {
+          headers['site_auth'] = customParams.site_auth;
+        }
+        if (customParams.site_api) {
+          headers['site_api'] = customParams.site_api;
+        }
+      } catch (e) {
+        console.warn('[API Test] Failed to parse customParams:', e);
+      }
+    }
+
     if (apiConfig.useBackgroundProxy) {
       // 通过background代理发送请求
       response = await new Promise<Response>((resolve, reject) => {
@@ -228,10 +248,7 @@ export async function testOpenAICompatibleConnection(
             data: {
               url: apiConfig.apiEndpoint,
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${apiConfig.apiKey}`,
-              },
+              headers,
               body: JSON.stringify(requestBody),
               timeout: getApiTimeout(baseTimeout || 0) || 0,
             },
@@ -264,10 +281,7 @@ export async function testOpenAICompatibleConnection(
       const timeout = getApiTimeout(baseTimeout || 0);
       const fetchOptions: RequestInit = {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiConfig.apiKey}`,
-        },
+        headers,
         body: JSON.stringify(requestBody),
       };
 

@@ -67,6 +67,7 @@ export interface ServiceContainer {
 export interface ProcessingParams {
   originalWordDisplayMode: OriginalWordDisplayMode;
   maxLength: number | undefined;
+  minLength: number | undefined;
   translationPosition: TranslationPosition;
   showParentheses: boolean;
 }

@@ -24,8 +24,8 @@ export interface SegmenterConfig {
 }
 
 const DEFAULT_CONFIG: SegmenterConfig = {
-  maxSegmentLength: 500,
-  minSegmentLength: 20,
+  maxSegmentLength: 2000,
+  minSegmentLength: 80,
   enableSmartBoundary: true,
   mergeSmallSegments: true,
 };
@@ -99,16 +99,52 @@ export class ContentSegmenter {
       containers.push(node as Element);
     }
 
-    return containers;
+    // 去重：过滤掉被其他已收集容器包含的元素
+    // 防止父元素和子元素都被收集导致文本重复
+    return this.deduplicateNestedContainers(containers);
+  }
+
+  /**
+   * 去除嵌套的容器，保留最外层的容器
+   * 防止父子元素都被收集导致文本重复
+   */
+  private deduplicateNestedContainers(containers: Element[]): Element[] {
+    const result: Element[] = [];
+
+    for (const container of containers) {
+      // 检查是否有任何已收集的容器包含当前容器
+      const isNested = result.some(
+        (existing) => existing.contains(container) && existing !== container,
+      );
+
+      if (!isNested) {
+        // 检查当前容器是否包含已收集的容器，如果是则移除那些
+        const indicesToRemove: number[] = [];
+        for (let i = 0; i < result.length; i++) {
+          if (container.contains(result[i]) && container !== result[i]) {
+            indicesToRemove.push(i);
+          }
+        }
+
+        // 从后往前移除，避免索引偏移
+        for (let i = indicesToRemove.length - 1; i >= 0; i--) {
+          result.splice(indicesToRemove[i], 1);
+        }
+
+        result.push(container);
+      }
+    }
+
+    return result;
   }
 
   /**
    * 判断元素是否是叶子内容容器
    */
   private isLeafContentContainer(element: Element): boolean {
-    // 必须包含文本内容
+    // 必须包含文本内容（移除最小长度限制，允许小段落被收集后合并）
     const textContent = this.getTextContent(element);
-    if (!textContent || textContent.length < this.config.minSegmentLength) {
+    if (!textContent) {
       return false;
     }
 
@@ -250,38 +286,73 @@ export class ContentSegmenter {
 
   /**
    * 合并小段落
+   * 策略：将短段落与后续段落合并，直到总长度接近 maxSegmentLength（目标70%）
+   * 确保：
+   * 1. 小于 minLength 的短段落向后积累
+   * 2. 累计达到 70% 目标时输出
+   * 3. 如果加入下一段会超过 maxLength，则强制输出当前批次
+   * 4. 章节末尾剩余文本强制翻译，不留残余
    */
   private mergeSmallSegments(segments: ContentSegment[]): ContentSegment[] {
-    if (segments.length <= 1) {
+    if (segments.length === 0) {
+      return segments;
+    }
+
+    if (segments.length === 1) {
+      // 单个段落直接返回（即使短也要翻译）
       return segments;
     }
 
     const merged: ContentSegment[] = [];
     let currentGroup: ContentSegment[] = [];
+    // 目标合并长度：maxSegmentLength 的 70%
+    const targetMergeLength = Math.floor(this.config.maxSegmentLength * 0.7);
+    const maxLength = this.config.maxSegmentLength;
 
-    for (const segment of segments) {
-      currentGroup.push(segment);
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
 
       // 计算当前组的总长度
-      const totalLength = currentGroup.reduce(
+      const currentLength = currentGroup.reduce(
         (sum, seg) => sum + seg.textContent.length,
         0,
       );
+      const newLength = currentLength + segment.textContent.length;
 
-      // 如果达到合理长度或者是最后一个段落，创建合并段落
-      if (
-        totalLength >= this.config.minSegmentLength * 2 ||
-        segments.indexOf(segment) === segments.length - 1
-      ) {
+      // 条件1：加入新段落后超过 maxLength，先输出当前组
+      if (newLength > maxLength && currentGroup.length > 0) {
+        // 输出当前组
         if (currentGroup.length === 1) {
-          // 单个段落，直接添加
           merged.push(currentGroup[0]);
         } else {
-          // 多个段落，合并
-          const mergedSegment = this.createMergedSegment(currentGroup);
-          merged.push(mergedSegment);
+          merged.push(this.createMergedSegment(currentGroup));
+        }
+        // 新段落开始新组
+        currentGroup = [segment];
+      }
+      // 条件2：达到目标长度 70%，输出当前组
+      else if (newLength >= targetMergeLength && currentGroup.length > 0) {
+        // 把当前段落也加入后一起输出
+        currentGroup.push(segment);
+        if (currentGroup.length === 1) {
+          merged.push(currentGroup[0]);
+        } else {
+          merged.push(this.createMergedSegment(currentGroup));
         }
         currentGroup = [];
+      }
+      // 条件3：继续累积
+      else {
+        currentGroup.push(segment);
+      }
+    }
+
+    // 处理末尾剩余的段落（强制翻译，不留残余）
+    if (currentGroup.length > 0) {
+      if (currentGroup.length === 1) {
+        merged.push(currentGroup[0]);
+      } else {
+        merged.push(this.createMergedSegment(currentGroup));
       }
     }
 

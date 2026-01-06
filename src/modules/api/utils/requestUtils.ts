@@ -28,12 +28,30 @@ async function sendDirectRequest(
   apiConfig: ApiConfig,
   timeout: number,
 ): Promise<Response> {
+  // 构建请求头
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiConfig.apiKey}`,
+  };
+
+  // 从 customParams 提取 site_auth 和 site_api 并添加到 headers
+  if (apiConfig.customParams) {
+    try {
+      const customParams = JSON.parse(apiConfig.customParams);
+      if (customParams.site_auth) {
+        headers['site_auth'] = customParams.site_auth;
+      }
+      if (customParams.site_api) {
+        headers['site_api'] = customParams.site_api;
+      }
+    } catch (e) {
+      console.warn('[API] Failed to parse customParams:', e);
+    }
+  }
+
   const fetchOptions: RequestInit = {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiConfig.apiKey}`,
-    },
+    headers,
     body: JSON.stringify(requestBody),
   };
 
@@ -52,6 +70,27 @@ async function sendViaBackground(
   apiConfig: ApiConfig,
   timeout: number,
 ): Promise<Response> {
+  // 构建请求头
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiConfig.apiKey}`,
+  };
+
+  // 从 customParams 提取 site_auth 和 site_api 并添加到 headers
+  if (apiConfig.customParams) {
+    try {
+      const customParams = JSON.parse(apiConfig.customParams);
+      if (customParams.site_auth) {
+        headers['site_auth'] = customParams.site_auth;
+      }
+      if (customParams.site_api) {
+        headers['site_api'] = customParams.site_api;
+      }
+    } catch (e) {
+      console.warn('[API] Failed to parse customParams:', e);
+    }
+  }
+
   return new Promise((resolve) => {
     browser.runtime.sendMessage(
       {
@@ -59,10 +98,7 @@ async function sendViaBackground(
         data: {
           url: apiConfig.apiEndpoint,
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiConfig.apiKey}`,
-          },
+          headers,
           body: JSON.stringify(requestBody),
           timeout: timeout,
         },
