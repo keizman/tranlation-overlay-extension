@@ -9,28 +9,26 @@
  *    - 从中心向两侧寻找强语义结束符 (\n > . > ? > ! > ;)
  *    - 优先向右，其次向左
  *    - 兜底：80字符内无标点则按空格切分
- * 3. 每个 Slice 的 SSML 中插入 mark 标签用于时间同步
+ * 3. 每个 Slice 的 SSML 中在句末插入 mark 标签 (句子级别)
+ *    - 在句末 .!?; 后插入 mark
+ *    - 避免密集 mark 导致事件丢失
  */
 
-import type { TextSlice, SSMLMark } from '../shared/types/fullTextTTS';
+import type {
+  TextSlice,
+  SSMLMark,
+  SentenceInfo,
+} from '../shared/types/fullTextTTS';
 import {
   ENG_TTS_MAX_LENGTH,
   SPLIT_SEARCH_RANGE,
   SPLIT_DELIMITERS,
-  SSML_MARK_INTERVAL,
+  SENTENCE_DELIMITERS,
   SSML_BREAK_TIME,
 } from './constants';
+import { createModuleLogger } from '../shared/utils/DebugLogger';
 
-/**
- * 创建模块日志器
- */
-const createLogger = (prefix: string) => ({
-  log: (...args: unknown[]) => console.log('[' + prefix + ']', ...args),
-  warn: (...args: unknown[]) => console.warn('[' + prefix + ']', ...args),
-  error: (...args: unknown[]) => console.error('[' + prefix + ']', ...args),
-});
-
-const logger = createLogger('TextSlicer');
+const logger = createModuleLogger('TextSlicer');
 
 /**
  * 文本切片器
@@ -150,8 +148,14 @@ export class TextSlicer {
    * 创建文本切片
    */
   private createSlice(text: string, startOffset: number): TextSlice {
-    const marks = this.generateMarks(text, startOffset);
+    // 先分句
+    const sentences = this.splitIntoSentences(text, startOffset);
+    // 生成句子级别的 marks
+    const marks = this.generateSentenceMarks(sentences, startOffset);
+    // 构建 SSML
     const ssml = this.buildSSML(text, marks);
+
+    logger.log(`创建切片: ${sentences.length} 句, ${marks.length} marks`);
 
     return {
       text,
@@ -159,68 +163,133 @@ export class TextSlicer {
       endOffset: startOffset + text.length,
       ssml,
       marks,
+      sentences,
     };
   }
 
   /**
-   * 生成 SSML marks
-   * 每 N 个单词插入一个 mark
+   * 分句
+   * 按句末标点 .!?; 分割文本
    */
-  private generateMarks(text: string, startOffset: number): SSMLMark[] {
-    const marks: SSMLMark[] = [];
-    const words = text.split(/\s+/);
-    let charIndex = 0;
-    let markIndex = 0;
+  private splitIntoSentences(
+    text: string,
+    startOffset: number,
+  ): SentenceInfo[] {
+    const sentences: SentenceInfo[] = [];
+    // 使用正则匹配句子结束符后的位置进行分割
+    const sentenceRegex = /[^.!?;]*[.!?;]+/g;
+    let match;
+    let lastIndex = 0;
 
-    for (let i = 0; i < words.length; i++) {
-      const word = words[i];
-      // 找到这个单词在原文中的位置
-      const wordStart = text.indexOf(word, charIndex);
-
-      // 每 N 个单词插入一个 mark
-      if (i > 0 && i % SSML_MARK_INTERVAL === 0) {
-        marks.push({
-          name: `m${markIndex}`,
-          charOffset: startOffset + wordStart,
+    while ((match = sentenceRegex.exec(text)) !== null) {
+      const sentenceText = match[0].trim();
+      if (sentenceText) {
+        const sentenceStart = text.indexOf(match[0], lastIndex);
+        sentences.push({
+          text: sentenceText,
+          startOffset: startOffset + sentenceStart,
+          endOffset: startOffset + sentenceStart + match[0].length,
+          wordCount: this.countWords(sentenceText),
         });
-        markIndex++;
+        lastIndex = sentenceStart + match[0].length;
       }
-
-      charIndex = wordStart + word.length;
     }
 
+    // 处理末尾没有标点的剩余文本
+    const remaining = text.substring(lastIndex).trim();
+    if (remaining) {
+      sentences.push({
+        text: remaining,
+        startOffset: startOffset + lastIndex,
+        endOffset: startOffset + text.length,
+        wordCount: this.countWords(remaining),
+      });
+    }
+
+    // 如果没有分出句子，把整个文本当作一个句子
+    if (sentences.length === 0) {
+      sentences.push({
+        text: text,
+        startOffset: startOffset,
+        endOffset: startOffset + text.length,
+        wordCount: this.countWords(text),
+      });
+    }
+
+    return sentences;
+  }
+
+  /**
+   * 统计单词数
+   */
+  private countWords(text: string): number {
+    return text.split(/\s+/).filter((w) => w.length > 0).length;
+  }
+
+  /**
+   * 生成句子级别的 SSML marks
+   * 在每个句子末尾插入一个 mark
+   */
+  private generateSentenceMarks(
+    sentences: SentenceInfo[],
+    startOffset: number,
+  ): SSMLMark[] {
+    const marks: SSMLMark[] = [];
+
+    for (let i = 0; i < sentences.length; i++) {
+      const sentence = sentences[i];
+      marks.push({
+        name: `s${i}`,
+        charOffset: sentence.endOffset, // 句子结束位置
+        sentenceIndex: i,
+        sentenceText: sentence.text,
+        wordCount: sentence.wordCount,
+      });
+    }
+
+    logger.log(`生成 ${marks.length} 个句子级 marks`);
     return marks;
   }
 
   /**
    * 构建 SSML 文本
-   * 插入 break 和 mark 标签
+   * 在句末插入 mark 标签
    */
   private buildSSML(text: string, marks: SSMLMark[]): string {
     // 转义 SSML 特殊字符
-    const escapedText = this.escapeSSML(text);
+    let escapedText = this.escapeSSML(text);
 
-    // 插入 mark 标签 (从后向前插入，避免影响索引)
-    const escapedWords = escapedText.split(/\s+/);
-    let result = '';
-    let markIndex = 0;
+    // 按句末位置插入 marks (从后向前插入，避免影响索引)
+    // 创建一个 mark 插入位置的映射
+    const insertPositions: { position: number; markName: string }[] = [];
 
-    for (let i = 0; i < escapedWords.length; i++) {
-      if (i > 0) {
-        result += ' ';
+    for (const mark of marks) {
+      // 在原文中找到句子结束位置
+      // 找到句末标点的位置
+      const sentenceEndChar = mark.sentenceText.slice(-1);
+      if (SENTENCE_DELIMITERS.test(sentenceEndChar)) {
+        // 句子以标点结尾，可用于在 SSML 中插入 mark
       }
-
-      // 检查是否需要在此处插入 mark
-      if (i > 0 && i % SSML_MARK_INTERVAL === 0 && markIndex < marks.length) {
-        result += `<mark name="${marks[markIndex].name}"/>`;
-        markIndex++;
-      }
-
-      result += escapedWords[i];
+      insertPositions.push({
+        position: mark.charOffset,
+        markName: mark.name,
+      });
     }
 
+    // 简化方案：按句末标点位置在文本中插入 marks
+    // 使用正则替换在句末标点后插入 mark
+    let markIndex = 0;
+    escapedText = escapedText.replace(/([.!?;])/g, (match, p1) => {
+      if (markIndex < marks.length) {
+        const markTag = `${p1}<mark name="${marks[markIndex].name}"/>`;
+        markIndex++;
+        return markTag;
+      }
+      return match;
+    });
+
     // 添加 speak 标签和 break
-    return `<speak><break time="${SSML_BREAK_TIME}ms"/>${result}</speak>`;
+    return `<speak><break time="${SSML_BREAK_TIME}ms"/>${escapedText}</speak>`;
   }
 
   /**

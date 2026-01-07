@@ -25,17 +25,9 @@ import { AudioCache } from './AudioCache';
 import { AudioPlayer, getAudioPlayer, destroyAudioPlayer } from './AudioPlayer';
 import { DOMTextExtractor, getDOMTextExtractor } from './DOMTextExtractor';
 import { HighlightAnimator, getHighlightAnimator } from './HighlightAnimator';
+import { createModuleLogger } from '../shared/utils/DebugLogger';
 
-/**
- * 创建模块日志器
- */
-const createLogger = (prefix: string) => ({
-  log: (...args: unknown[]) => console.log('[' + prefix + ']', ...args),
-  warn: (...args: unknown[]) => console.warn('[' + prefix + ']', ...args),
-  error: (...args: unknown[]) => console.error('[' + prefix + ']', ...args),
-});
-
-const logger = createLogger('FullTextTTSService');
+const logger = createModuleLogger('FullTextTTSService');
 
 /**
  * 全文 TTS 服务
@@ -159,16 +151,21 @@ export class FullTextTTSService {
         throw new Error('加载音频失败');
       }
 
-      // 开始高亮同步
+      // 先播放音频 (会解码并设置 duration)
+      await this.audioPlayer.play(cacheEntry.audioBuffer);
+
+      // 获取音频时长
+      const audioDuration = this.audioPlayer.getDuration();
+
+      // 开始高亮同步 (传入 audioDuration 用于词级估算)
       this.highlightAnimator?.startSync(
         paragraph.element,
         slice,
         cacheEntry.timepoints,
         () => this.audioPlayer?.getCurrentTime() || 0,
+        audioDuration,
+        true, // enableWordLevel - 可从用户设置读取
       );
-
-      // 播放音频
-      await this.audioPlayer.play(cacheEntry.audioBuffer);
 
       // 设置播放状态
       this.setState('PLAYING');

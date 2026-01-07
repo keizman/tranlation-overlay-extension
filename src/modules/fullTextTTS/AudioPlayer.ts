@@ -10,17 +10,9 @@
  */
 
 import { FADE_DURATION } from './constants';
+import { createModuleLogger } from '../shared/utils/DebugLogger';
 
-/**
- * 创建模块日志器
- */
-const createLogger = (prefix: string) => ({
-  log: (...args: unknown[]) => console.log('[' + prefix + ']', ...args),
-  warn: (...args: unknown[]) => console.warn('[' + prefix + ']', ...args),
-  error: (...args: unknown[]) => console.error('[' + prefix + ']', ...args),
-});
-
-const logger = createLogger('AudioPlayer');
+const logger = createModuleLogger('AudioPlayer');
 
 /**
  * 播放事件回调

@@ -12,17 +12,9 @@
 import type { AudioCacheEntry, TextSlice } from '../shared/types/fullTextTTS';
 import { PRECACHE_BEFORE, PRECACHE_AFTER } from './constants';
 import { FullTextTTSProvider } from './FullTextTTSProvider';
+import { createModuleLogger } from '../shared/utils/DebugLogger';
 
-/**
- * 创建模块日志器
- */
-const createLogger = (prefix: string) => ({
-  log: (...args: unknown[]) => console.log('[' + prefix + ']', ...args),
-  warn: (...args: unknown[]) => console.warn('[' + prefix + ']', ...args),
-  error: (...args: unknown[]) => console.error('[' + prefix + ']', ...args),
-});
-
-const logger = createLogger('AudioCache');
+const logger = createModuleLogger('AudioCache');
 
 /**
  * 音频缓存管理器

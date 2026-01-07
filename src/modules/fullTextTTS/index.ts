@@ -28,3 +28,16 @@ export {
   getHighlightAnimator,
   injectFullTextTTSHighlightStyles,
 } from './HighlightAnimator';
+export {
+  validateTimepoints,
+  estimateSentenceTimes,
+  DriftDetector,
+  getDriftDetector,
+  resetDriftDetector,
+} from './TimepointValidator';
+export {
+  estimateWordTimings,
+  mergeToGlobalTimings,
+  findCurrentWordIndex,
+  type WordTiming,
+} from './WordTimingEstimator';

@@ -477,6 +477,12 @@
       "ttsDescription": "Full-text TTS reading configuration"
     }
   },
+  "tts": {
+    "advancedFunctions": "Advanced Functions",
+    "fullTextTTSBar": "Full-Text TTS Bar",
+    "fullTextTTSBarNote": "Requires your own Google Cloud TTS API key",
+    "configureTTSAPI": "Configure TTS API"
+  },
   "ttsSettings": {
     "title": "TTS Service Settings",
     "barToggle": {

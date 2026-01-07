@@ -35,11 +35,25 @@ export type FullTextTTSPlayState = 'IDLE' | 'PLAYING' | 'PAUSED' | 'LOADING';
 // ==================== 文本切片类型 ====================
 
 /**
- * SSML Mark 标记
+ * SSML Mark 标记 (句子级别)
  */
 export interface SSMLMark {
-  name: string; // mark 名称，如 "w1", "w2"
+  name: string; // mark 名称，如 "s0", "s1" (sentence index)
   charOffset: number; // 在原文中的字符偏移
+  sentenceIndex: number; // 句子索引 (用于 fallback)
+  sentenceText: string; // 句子文本 (用于 fallback 估算时长)
+  wordCount: number; // 句子词数 (用于 fallback 估算时长)
+}
+
+/**
+ * 句子信息 (用于 fallback 估算)
+ */
+export interface SentenceInfo {
+  text: string;
+  startOffset: number;
+  endOffset: number;
+  wordCount: number;
+  estimatedDuration?: number; // 估算时长 (秒)
 }
 
 /**
@@ -51,6 +65,7 @@ export interface TextSlice {
   endOffset: number; // 在原文中的结束位置
   ssml: string; // SSML 格式文本 (带 mark 标签)
   marks: SSMLMark[]; // mark 标记列表
+  sentences: SentenceInfo[]; // 句子列表 (用于 fallback)
 }
 
 /**
@@ -60,6 +75,16 @@ export interface TTSTimepoint {
   markName: string;
   timeSeconds: number;
   type: 'SSML_MARK';
+}
+
+/**
+ * Timepoint 验证结果
+ */
+export interface TimepointValidation {
+  isValid: boolean;
+  invalidReason?: string;
+  fallbackTimes?: number[]; // 估算的句子起始时间 (fallback 用)
+  useFallback: boolean;
 }
 
 /**

@@ -107,8 +107,23 @@ export const DEFAULT_SETTINGS: UserSettings = {
   translationTriggerMode: TranslationTriggerMode.AUTO, // 默认自动翻译
   showDebugPanel: true, // 临时开启调试面板
   // 全文TTS设置
-  enableFullTextTTSBar: false, // 默认关闭底栏
+  enableFullTextTTSBar: true, // 默认开启底栏
+  enableWordLevelAnimation: true, // 默认开启逐词高亮动画
   fullTextTTSBarCollapsed: true, // 默认折叠状态
-  fullTextTTSConfigs: [], // 默认无配置
-  activeFullTextTTSConfigId: '', // 默认无激活配置
+  fullTextTTSConfigs: [
+    {
+      id: 'default-tts-config',
+      name: 'Google Cloud TTS',
+      config: {
+        apiEndpoint:
+          import.meta.env.VITE_WXT_DEFAULT_TTS_API_ENDPOINT ||
+          'https://texttospeech.googleapis.com/v1beta1/text:synthesize',
+        apiKey: import.meta.env.VITE_WXT_DEFAULT_TTS_API_KEY || '', // 支持环境变量或用户填写
+        customParams: '',
+      },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    },
+  ],
+  activeFullTextTTSConfigId: 'default-tts-config',
 };

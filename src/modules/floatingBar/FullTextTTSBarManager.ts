@@ -5,31 +5,17 @@
 
 import type { UserSettings } from '../shared/types/storage';
 import type { FullTextTTSPlayState } from '../shared/types/fullTextTTS';
-// TODO: Fix Rollup TypeScript parsing for fullTextTTS module
-// import { getFullTextTTSService, destroyFullTextTTSService } from '../fullTextTTS/FullTextTTSService';
+import {
+  getFullTextTTSService,
+  destroyFullTextTTSService,
+} from '../fullTextTTS/FullTextTTSService';
 import { browser } from 'wxt/browser';
+import { createModuleLogger } from '../shared/utils/DebugLogger';
 
 /**
- * 日志前缀
+ * 模块日志器 - 输出到控制台和调试面板
  */
-const LOG_PREFIX = '[FullTextTTSBarManager]';
-
-/**
- * Stub TTS Service (until fullTextTTS module parsing is fixed)
- */
-const stubTTSService = {
-  initialize: (_config: unknown) => {},
-  getState: () => 'IDLE' as FullTextTTSPlayState,
-  onStateChange: (cb: (state: FullTextTTSPlayState) => void) => () => {},
-  startFullTextReading: async () => {},
-  pause: () => {},
-  resume: () => {},
-  stop: () => {},
-  previousParagraph: async () => {},
-  nextParagraph: async () => {},
-};
-const getFullTextTTSService = () => stubTTSService;
-const destroyFullTextTTSService = () => {};
+const logger = createModuleLogger('TTSBar');
 
 /**
  * 底栏容器 ID
@@ -39,7 +25,11 @@ const BAR_CONTAINER_ID = 'fulltext-tts-bar-container';
 /**
  * 底栏 HTML 模板
  */
-const createBarHTML = (isCollapsed: boolean, state: FullTextTTSPlayState) => {
+const createBarHTML = (
+  isCollapsed: boolean,
+  state: FullTextTTSPlayState,
+  isConfigured: boolean = true,
+) => {
   if (isCollapsed) {
     return `
       <div id="${BAR_CONTAINER_ID}" class="fulltext-tts-bar-collapsed">
@@ -54,7 +44,8 @@ const createBarHTML = (isCollapsed: boolean, state: FullTextTTSPlayState) => {
 
   const isPlaying = state === 'PLAYING';
   const isLoading = state === 'LOADING';
-  const isDisabled = state === 'LOADING';
+  // 未配置时也禁用播放控制按钮
+  const isDisabled = state === 'LOADING' || !isConfigured;
 
   return `
     <div id="${BAR_CONTAINER_ID}" class="fulltext-tts-bar">
@@ -73,7 +64,7 @@ const createBarHTML = (isCollapsed: boolean, state: FullTextTTSPlayState) => {
             <line x1="5" x2="5" y1="19" y2="5"/>
           </svg>
         </button>
-        <button class="fulltext-tts-play-btn" data-action="play" title="${isPlaying ? '暂停' : '播放'}">
+        <button class="fulltext-tts-play-btn ${isConfigured ? '' : 'disabled'}" data-action="play" ${isDisabled ? 'disabled' : ''} title="${!isConfigured ? '请先配置TTS API' : isPlaying ? '暂停' : '播放'}">
           ${
             isLoading
               ? '<svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>'
@@ -254,6 +245,7 @@ export class FullTextTTSBarManager {
   private settings: UserSettings | null = null;
   private styleElement: HTMLStyleElement | null = null;
   private unsubscribeStateChange: (() => void) | null = null;
+  private isConfigured: boolean = false; // API是否已正确配置
 
   /**
    * 初始化底栏管理器
@@ -268,7 +260,7 @@ export class FullTextTTSBarManager {
 
     // 检查是否启用
     if (!settings.enableFullTextTTSBar) {
-      console.log(LOG_PREFIX, '底栏未启用');
+      logger.log('底栏未启用');
       return;
     }
 
@@ -277,29 +269,37 @@ export class FullTextTTSBarManager {
       (c) => c.id === settings.activeFullTextTTSConfigId,
     );
 
-    if (!activeConfig || !activeConfig.config.apiKey) {
-      console.warn(LOG_PREFIX, '未配置 TTS API');
-      return;
+    // 检查配置是否完整（有API Key）
+    this.isConfigured = !!activeConfig?.config.apiKey;
+    if (!this.isConfigured) {
+      logger.warn('未配置 TTS API - 底栏将显示但播放功能禁用');
     }
 
     // 注入样式
     this.injectStyles();
 
-    // 初始化 TTS 服务
-    const ttsService = getFullTextTTSService();
-    ttsService.initialize(activeConfig.config);
+    // 仅在配置完整时初始化 TTS 服务
+    if (this.isConfigured && activeConfig) {
+      const ttsService = getFullTextTTSService();
+      ttsService.initialize(activeConfig.config);
 
-    // 监听状态变化
-    this.unsubscribeStateChange = ttsService.onStateChange((state) => {
-      this.currentState = state;
-      this.updateBarUI();
-    });
+      // 监听状态变化
+      this.unsubscribeStateChange = ttsService.onStateChange(
+        (state: FullTextTTSPlayState) => {
+          this.currentState = state;
+          this.updateBarUI();
+        },
+      );
+    }
 
     // 显示底栏
     this.show();
 
     this.isInitialized = true;
-    console.log(LOG_PREFIX, '底栏管理器已初始化');
+    logger.log(
+      '底栏管理器已初始化',
+      this.isConfigured ? '(已配置)' : '(未配置，播放功能禁用)',
+    );
   }
 
   /**
@@ -323,7 +323,7 @@ export class FullTextTTSBarManager {
     this.isBarVisible = true;
     this.renderBar();
     this.attachEventListeners();
-    console.log(LOG_PREFIX, '底栏已显示');
+    logger.log('底栏已显示');
   }
 
   /**
@@ -335,7 +335,7 @@ export class FullTextTTSBarManager {
     if (container) {
       container.remove();
     }
-    console.log(LOG_PREFIX, '底栏已隐藏');
+    logger.log('底栏已隐藏');
   }
 
   /**
@@ -350,7 +350,11 @@ export class FullTextTTSBarManager {
 
     // 创建新的
     const wrapper = document.createElement('div');
-    wrapper.innerHTML = createBarHTML(this.isCollapsed, this.currentState);
+    wrapper.innerHTML = createBarHTML(
+      this.isCollapsed,
+      this.currentState,
+      this.isConfigured,
+    );
     const bar = wrapper.firstElementChild;
     if (bar) {
       document.body.appendChild(bar);
@@ -424,7 +428,7 @@ export class FullTextTTSBarManager {
     // 保存状态
     await this.saveCollapsedState(true);
 
-    console.log(LOG_PREFIX, '底栏已折叠');
+    logger.log('底栏已折叠');
   }
 
   /**
@@ -437,7 +441,7 @@ export class FullTextTTSBarManager {
     // 保存状态
     await this.saveCollapsedState(false);
 
-    console.log(LOG_PREFIX, '底栏已展开');
+    logger.log('底栏已展开');
   }
 
   /**
@@ -451,7 +455,7 @@ export class FullTextTTSBarManager {
         await browser.storage.local.set({ settings: stored.settings });
       }
     } catch (e) {
-      console.error(LOG_PREFIX, '保存折叠状态失败:', e);
+      logger.error('保存折叠状态失败:', e);
     }
   }
 
@@ -459,6 +463,13 @@ export class FullTextTTSBarManager {
    * 处理播放/暂停
    */
   private async handlePlay(): Promise<void> {
+    // 未配置时不处理播放
+    if (!this.isConfigured) {
+      logger.warn('请先配置 TTS API');
+      this.handleSettings(); // 引导用户去设置
+      return;
+    }
+
     const ttsService = getFullTextTTSService();
     const state = ttsService.getState();
 
@@ -495,8 +506,9 @@ export class FullTextTTSBarManager {
    * 处理设置
    */
   private handleSettings(): void {
-    // 打开扩展设置页面
-    browser.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash: '#tts' });
+    logger.log('打开TTS设置页面: open-options hash=#tts');
+    // 打开扩展设置页面的TTS部分
+    browser.runtime.sendMessage({ type: 'open-options', hash: '#tts' });
   }
 
   /**
@@ -518,7 +530,7 @@ export class FullTextTTSBarManager {
     destroyFullTextTTSService();
     this.isInitialized = false;
 
-    console.log(LOG_PREFIX, '底栏管理器已销毁');
+    logger.log('底栏管理器已销毁');
   }
 }
 

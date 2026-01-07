@@ -277,6 +277,11 @@ const nativeLanguageOptions = computed(() =>
   languageService.getNativeLanguageOptions(),
 );
 
+// 打开 TTS 设置页面
+const openTTSSettings = () => {
+  browser.tabs.create({ url: 'options.html#tts' });
+};
+
 // 简化后使用v-model，删除旧的事件处理函数
 </script>
 
@@ -629,6 +634,36 @@ const nativeLanguageOptions = computed(() =>
                 {{ $t('api.manageConfig') }}
               </p>
             </div>
+          </div>
+        </div>
+
+        <!-- TTS 高级功能 -->
+        <div class="setting-group tts-section">
+          <div class="tts-header">
+            <span>{{ $t('tts.advancedFunctions') }}</span>
+          </div>
+          <div class="tts-content">
+            <div class="sub-setting-group">
+              <label class="text-sm">{{ $t('tts.fullTextTTSBar') }}</label>
+              <div class="toggle-container">
+                <input
+                  type="checkbox"
+                  v-model="settings.enableFullTextTTSBar"
+                  id="tts-bar-toggle"
+                  class="toggle-input"
+                />
+                <label for="tts-bar-toggle" class="toggle-label">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            <p class="setting-note" style="margin-top: 4px; margin-bottom: 8px">
+              {{ $t('tts.fullTextTTSBarNote') }}
+            </p>
+            <button @click="openTTSSettings" class="tts-settings-btn">
+              <ExternalLink class="w-3 h-3" />
+              <span>{{ $t('tts.configureTTSAPI') }}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -1519,5 +1554,58 @@ footer p {
   color: #6c757d;
   margin-top: 8px;
   line-height: 1.4;
+}
+
+/* TTS 高级功能样式 */
+.tts-section {
+  margin-top: 12px;
+  background-color: var(--card-bg-color);
+  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+}
+
+.tts-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tts-content .sub-setting-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.tts-settings-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background-color 0.2s,
+    transform 0.1s;
+  width: 100%;
+  justify-content: center;
+}
+
+.tts-settings-btn:hover {
+  background: var(--primary-hover-color);
+  transform: translateY(-1px);
+}
+
+.tts-settings-btn:active {
+  transform: translateY(0);
 }
 </style>

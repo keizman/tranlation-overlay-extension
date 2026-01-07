@@ -46,10 +46,28 @@ export const SPLIT_SEARCH_RANGE = 80;
 export const SPLIT_DELIMITERS = ['\n', '.', '?', '!', ';'] as const;
 
 /**
- * SSML mark 插入间隔 (每多少个单词插入一个 mark)
- * 避免 mark 过多导致性能问题
+ * 句子结束符正则 (用于 SSML mark 插入)
+ * 在句末 .!?; 后插入 mark，而非按单词间隔
  */
-export const SSML_MARK_INTERVAL = 5;
+export const SENTENCE_DELIMITERS = /[.!?;]/;
+
+/**
+ * 默认语速 (Words Per Minute)
+ * 用于 fallback 时估算句子时长
+ */
+export const DEFAULT_WPM = 150;
+
+/**
+ * 单点 drift 阈值 (秒)
+ * 如果单个 timepoint 的 drift 超过此值，触发 fallback
+ */
+export const DRIFT_THRESHOLD_SINGLE = 1.5;
+
+/**
+ * 累计 drift 阈值 (秒)
+ * 如果累计 drift 超过此值，触发 fallback
+ */
+export const DRIFT_THRESHOLD_CUMULATIVE = 3.0;
 
 // ==================== 音频播放配置 ====================
 

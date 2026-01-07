@@ -165,7 +165,25 @@ const activeConfig = computed<FullTextTTSConfigItem | undefined>(() => {
 onMounted(async () => {
   const stored = await browser.storage.local.get('settings');
   if (stored.settings) {
-    settings.value = { ...DEFAULT_SETTINGS, ...stored.settings };
+    // 合并默认设置
+    const merged = { ...DEFAULT_SETTINGS, ...stored.settings };
+
+    // 迁移：如果没有 TTS 配置，应用新的默认 TTS 设置
+    if (
+      !stored.settings.fullTextTTSConfigs ||
+      stored.settings.fullTextTTSConfigs.length === 0
+    ) {
+      console.log('[TTSSettings] Migrating TTS settings with new defaults');
+      merged.enableFullTextTTSBar = DEFAULT_SETTINGS.enableFullTextTTSBar;
+      merged.fullTextTTSBarCollapsed = DEFAULT_SETTINGS.fullTextTTSBarCollapsed;
+      merged.fullTextTTSConfigs = DEFAULT_SETTINGS.fullTextTTSConfigs;
+      merged.activeFullTextTTSConfigId =
+        DEFAULT_SETTINGS.activeFullTextTTSConfigId;
+      // 保存迁移后的设置
+      await browser.storage.local.set({ settings: merged });
+    }
+
+    settings.value = merged;
   }
 });
 
@@ -179,8 +197,15 @@ watch(
 );
 
 // 切换 TTS 底栏
-const toggleTTSBar = (checked: boolean) => {
+const toggleTTSBar = async (checked: boolean) => {
+  console.log('[TTSSettings] Toggle TTS bar:', checked);
   settings.value.enableFullTextTTSBar = checked;
+  // 立即保存到存储
+  await browser.storage.local.set({ settings: settings.value });
+  console.log(
+    '[TTSSettings] Settings saved:',
+    settings.value.enableFullTextTTSBar,
+  );
   emit('saveMessage', t('common.saved'));
 };
 

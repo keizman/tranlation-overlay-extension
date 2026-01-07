@@ -62,6 +62,7 @@ export interface UserSettings {
   showDebugPanel?: boolean;
   // 新增：全文TTS设置
   enableFullTextTTSBar: boolean; // 底栏开关
+  enableWordLevelAnimation: boolean; // 逐词高亮动画开关 (默认开)
   fullTextTTSBarCollapsed: boolean; // 底栏是否折叠 (刷新后保持)
   fullTextTTSConfigs: import('./fullTextTTS').FullTextTTSConfigItem[]; // TTS配置列表
   activeFullTextTTSConfigId: string; // 当前激活的配置ID

@@ -25,17 +25,9 @@ import {
   TTS_REQUEST_TIMEOUT,
   TEST_CONNECTION_TEXT,
 } from './constants';
+import { createModuleLogger } from '../shared/utils/DebugLogger';
 
-/**
- * 创建模块日志器
- */
-const createLogger = (prefix: string) => ({
-  log: (...args: unknown[]) => console.log('[' + prefix + ']', ...args),
-  warn: (...args: unknown[]) => console.warn('[' + prefix + ']', ...args),
-  error: (...args: unknown[]) => console.error('[' + prefix + ']', ...args),
-});
-
-const logger = createLogger('FullTextTTSProvider');
+const logger = createModuleLogger('FullTextTTSProvider');
 
 /**
  * TTS 合成请求体

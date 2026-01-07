@@ -79,7 +79,7 @@ export default defineBackground(() => {
         return false;
 
       case MESSAGE_TYPES.OPEN_OPTIONS:
-        handleOpenOptions();
+        handleOpenOptions(message);
         return false;
 
       case MESSAGE_TYPES.VALIDATE_CONFIG:
@@ -143,10 +143,12 @@ export default defineBackground(() => {
   /**
    * 处理打开选项页面消息
    */
-  async function handleOpenOptions(): Promise<void> {
-    const optionsUrl = browser.runtime.getURL(
-      BACKGROUND_CONSTANTS.OPTIONS_PATH,
-    );
+  async function handleOpenOptions(message?: any): Promise<void> {
+    let optionsUrl = browser.runtime.getURL(BACKGROUND_CONSTANTS.OPTIONS_PATH);
+    // 支持 hash 参数用于跳转到特定模块
+    if (message?.hash) {
+      optionsUrl += message.hash;
+    }
     browser.tabs.create({ url: optionsUrl });
   }
 

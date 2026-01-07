@@ -114,21 +114,48 @@ import type {
   FullTextTTSConfig,
 } from '@/src/modules/shared/types/fullTextTTS';
 
-// TODO: Fix Rollup TypeScript parsing for fullTextTTS module
-// import { DEFAULT_TTS_ENDPOINT } from '@/src/modules/fullTextTTS/constants';
-// import { FullTextTTSProvider } from '@/src/modules/fullTextTTS/FullTextTTSProvider';
-
+// 默认 TTS 端点
 const DEFAULT_TTS_ENDPOINT =
   'https://texttospeech.googleapis.com/v1beta1/text:synthesize';
 
-// Stub TTS Provider - test connection not functional until fullTextTTS module is fixed
-class FullTextTTSProvider {
-  constructor(_config: FullTextTTSConfig) {}
-  async testConnection(): Promise<{ success: boolean; error?: string }> {
-    return {
-      success: false,
-      error: 'TTS module not yet available (build configuration issue)',
-    };
+// 内联 TTS 测试连接函数 (避免导入有构建问题的模块)
+async function testTTSConnection(
+  config: FullTextTTSConfig,
+): Promise<{ success: boolean; error?: string }> {
+  const endpoint = config.apiEndpoint || DEFAULT_TTS_ENDPOINT;
+  const url = `${endpoint}?key=${config.apiKey}`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify({
+        input: { text: 'Hello, this is a test.' },
+        voice: { languageCode: 'en-US', name: 'en-US-Neural2-F' },
+        audioConfig: { audioEncoding: 'MP3' },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMessage = errorData?.error?.message || response.statusText;
+      return {
+        success: false,
+        error: `API 错误 (${response.status}): ${errorMessage}`,
+      };
+    }
+
+    const data = await response.json();
+    if (!data.audioContent) {
+      return { success: false, error: 'API 返回空音频内容' };
+    }
+
+    return { success: true };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误';
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -189,13 +216,19 @@ const isValid = computed(() => {
 const testConnection = async () => {
   if (!localConfig.value.config.apiKey) return;
 
+  console.log('[TTSConfig] 开始测试连接:', {
+    endpoint: localConfig.value.config.apiEndpoint,
+    hasApiKey: !!localConfig.value.config.apiKey,
+  });
+
   isTesting.value = true;
   testResult.value = null;
 
   try {
-    const provider = new FullTextTTSProvider(localConfig.value.config);
-    testResult.value = await provider.testConnection();
+    testResult.value = await testTTSConnection(localConfig.value.config);
+    console.log('[TTSConfig] 测试结果:', testResult.value);
   } catch (error) {
+    console.error('[TTSConfig] 测试异常:', error);
     testResult.value = {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

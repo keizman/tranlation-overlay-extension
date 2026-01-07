@@ -10,17 +10,9 @@
 
 import type { ParagraphInfo } from '../shared/types/fullTextTTS';
 import { TextSlicer } from './TextSlicer';
+import { createModuleLogger } from '../shared/utils/DebugLogger';
 
-/**
- * 创建模块日志器
- */
-const createLogger = (prefix: string) => ({
-  log: (...args: unknown[]) => console.log('[' + prefix + ']', ...args),
-  warn: (...args: unknown[]) => console.warn('[' + prefix + ']', ...args),
-  error: (...args: unknown[]) => console.error('[' + prefix + ']', ...args),
-});
-
-const logger = createLogger('DOMTextExtractor');
+const logger = createModuleLogger('DOMTextExtractor');
 
 /**
  * 需要排除的选择器

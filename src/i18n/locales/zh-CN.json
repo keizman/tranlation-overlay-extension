@@ -478,6 +478,12 @@
       "ttsDescription": "全文朗读TTS配置"
     }
   },
+  "tts": {
+    "advancedFunctions": "高级功能",
+    "fullTextTTSBar": "全文朗读底栏",
+    "fullTextTTSBarNote": "需要您自己的 Google Cloud TTS API 密钥",
+    "configureTTSAPI": "配置 TTS API"
+  },
   "ttsSettings": {
     "title": "TTS服务设置",
     "barToggle": {
