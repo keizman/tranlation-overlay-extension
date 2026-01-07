@@ -10,31 +10,6 @@
         </CardTitle>
       </CardHeader>
       <CardContent class="space-y-4">
-        <!-- 全文TTS底栏开关 -->
-        <div class="bg-muted/50 rounded-lg p-4 border border-border/50">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div
-                class="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center"
-              >
-                <Volume2 class="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <h3 class="text-base font-semibold text-foreground">
-                  {{ $t('ttsSettings.barToggle.title') }}
-                </h3>
-                <p class="text-sm text-muted-foreground">
-                  {{ $t('ttsSettings.barToggle.description') }}
-                </p>
-              </div>
-            </div>
-            <Switch
-              :checked="settings.enableFullTextTTSBar"
-              @update:checked="toggleTTSBar"
-            />
-          </div>
-        </div>
-
         <!-- TTS 配置入口 -->
         <div class="bg-muted/50 rounded-lg p-4 border border-border/50">
           <div class="flex items-center justify-between">
@@ -134,9 +109,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Volume2, Settings, Settings2 } from 'lucide-vue-next';
+import { Settings, Settings2 } from 'lucide-vue-next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { browser } from 'wxt/browser';
 import type { UserSettings } from '@/src/modules/shared/types/storage';
@@ -185,6 +159,12 @@ onMounted(async () => {
 
     settings.value = merged;
   }
+
+  // 检查 URL 参数是否要求自动打开配置管理器
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('openConfigManager') === 'true') {
+    showConfigManager.value = true;
+  }
 });
 
 // 监听设置变化并保存
@@ -195,19 +175,6 @@ watch(
   },
   { deep: true },
 );
-
-// 切换 TTS 底栏
-const toggleTTSBar = async (checked: boolean) => {
-  console.log('[TTSSettings] Toggle TTS bar:', checked);
-  settings.value.enableFullTextTTSBar = checked;
-  // 立即保存到存储
-  await browser.storage.local.set({ settings: settings.value });
-  console.log(
-    '[TTSSettings] Settings saved:',
-    settings.value.enableFullTextTTSBar,
-  );
-  emit('saveMessage', t('common.saved'));
-};
 
 // 处理保存
 const handleSave = () => {

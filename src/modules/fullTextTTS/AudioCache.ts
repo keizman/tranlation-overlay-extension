@@ -26,6 +26,7 @@ export class AudioCache {
   private provider: FullTextTTSProvider;
   private slices: TextSlice[] = [];
   private isPaused: boolean = false;
+  private currentPlayingIndex: number = 0; // 当前播放位置，用于限制预加载范围
 
   constructor(provider: FullTextTTSProvider) {
     this.provider = provider;
@@ -133,10 +134,21 @@ export class AudioCache {
   }
 
   /**
-   * 预加载下一个切片
+   * 预加载下一个切片 (仅在 PRECACHE_AFTER 范围内)
+   * @param loadedIndex 刚加载完成的索引
    */
-  private prefetchNext(currentIndex: number): void {
-    const nextIndex = currentIndex + 1;
+  private prefetchNext(loadedIndex: number): void {
+    const nextIndex = loadedIndex + 1;
+    const maxPrefetchIndex = this.currentPlayingIndex + PRECACHE_AFTER;
+
+    // 检查是否超出当前播放位置的预加载范围
+    if (nextIndex > maxPrefetchIndex) {
+      logger.log(
+        `预加载已达到限制 (当前播放=${this.currentPlayingIndex}, 最大预加载=${maxPrefetchIndex}), 跳过 slice ${nextIndex}`,
+      );
+      return;
+    }
+
     if (
       nextIndex < this.slices.length &&
       !this.has(nextIndex) &&
@@ -152,6 +164,9 @@ export class AudioCache {
    * @param currentIndex 当前播放索引
    */
   prefetch(currentIndex: number): void {
+    // 更新当前播放位置
+    this.currentPlayingIndex = currentIndex;
+
     if (this.isPaused) {
       logger.log('暂停状态，跳过预加载');
       return;
@@ -189,10 +204,8 @@ export class AudioCache {
       }
     }
 
-    // 触发新的预加载
-    if (!this.isPaused) {
-      this.prefetchNext(playedIndex);
-    }
+    // 使用 prefetch 方法来正确更新当前播放位置并限制预加载范围
+    this.prefetch(playedIndex);
   }
 
   /**

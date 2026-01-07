@@ -265,11 +265,13 @@ const originalWordDisplayOptions = computed(() => [
 const extensionVersion = ref('N/A');
 
 const openOptionsPage = () => {
-  browser.tabs.create({ url: 'options.html#translation' });
+  const url = browser.runtime.getURL('/options.html#translation');
+  window.open(url);
 };
 
 const openOptionsBasePage = () => {
-  browser.tabs.create({ url: 'options.html#basic' });
+  const url = browser.runtime.getURL('/options.html#basic');
+  window.open(url);
 };
 
 // 母语设置选项
@@ -277,9 +279,12 @@ const nativeLanguageOptions = computed(() =>
   languageService.getNativeLanguageOptions(),
 );
 
-// 打开 TTS 设置页面
+// 打开 TTS 设置页面 (直接打开配置管理器)
 const openTTSSettings = () => {
-  browser.tabs.create({ url: 'options.html#tts' });
+  const url = browser.runtime.getURL(
+    '/options.html?openConfigManager=true#tts',
+  );
+  window.open(url);
 };
 
 // 简化后使用v-model，删除旧的事件处理函数
