@@ -20,6 +20,10 @@ import { languageService } from '../core/translation/LanguageService';
 import { ParagraphTTSService } from './services/ParagraphTTSService';
 import { SwipeTranslationService } from './services/SwipeTranslationService';
 import {
+  getSPANavigationDetector,
+  destroySPANavigationDetector,
+} from './services/SPANavigationDetector';
+import {
   getFullTextTTSBarManager,
   destroyFullTextTTSBarManager,
 } from '../floatingBar';
@@ -178,6 +182,36 @@ export class TranslationStateManager {
   }
 
   /**
+   * 重置状态 (用于SPA导航后)
+   * 清除所有翻译内容和状态，准备处理新页面
+   */
+  public reset(): void {
+    console.log('[TranslationStateManager] 重置翻译状态 (SPA导航)');
+
+    // 清除单词翻译内容
+    const wordTranslations = document.querySelectorAll(
+      this.TRANSLATION_SELECTOR,
+    );
+    wordTranslations.forEach((el) => el.remove());
+
+    // 清除段落翻译内容
+    const paragraphTranslations = document.querySelectorAll(
+      '.illa-paragraph-translation',
+    );
+    paragraphTranslations.forEach((el) => el.remove());
+
+    // 通过段落翻译服务清除
+    this.clearAllTranslations();
+
+    // 重置状态
+    this.isTranslationVisible = true;
+    document.body.classList.remove(this.HIDDEN_CLASS);
+
+    // 同步悬浮球状态
+    this.syncFloatingBallState();
+  }
+
+  /**
    * 更新处理服务引用
    */
   updateProcessingService(processingService: ProcessingService): void {
@@ -268,6 +302,7 @@ export class ContentManager implements IContentManager {
       this.services?.lazyLoadingService?.destroy();
       this.paragraphTTSService?.destroy();
       this.swipeTranslationService?.destroy();
+      destroySPANavigationDetector();
       destroyFullTextTTSBarManager();
       console.log('[ContentManager] 服务已销毁');
     } catch (error) {
@@ -516,6 +551,33 @@ export class ContentManager implements IContentManager {
   private setupListeners(): void {
     this.listenerService?.setupMessageListeners();
     this.listenerService?.setupDomObserver();
+
+    // 启动 SPA 导航检测
+    this.setupSPANavigationDetection();
+  }
+
+  /**
+   * 设置 SPA 导航检测
+   * 检测单页应用导航，重置翻译状态以支持新内容翻译
+   */
+  private setupSPANavigationDetection(): void {
+    const detector = getSPANavigationDetector();
+    detector.start();
+
+    detector.onNavigate((newUrl, oldUrl) => {
+      // URL 变化或大规模 DOM 变化
+      if (newUrl === oldUrl) {
+        // 内容替换（URL 未变但内容大规模变化）
+        console.log('[ContentManager] 检测到内容替换，重置翻译状态');
+      } else {
+        console.log(`[ContentManager] 检测到 SPA 导航: ${oldUrl} -> ${newUrl}`);
+      }
+
+      // 重置翻译状态，准备处理新内容
+      this.translationStateManager?.reset();
+    });
+
+    console.log('[ContentManager] SPA 导航检测已启动');
   }
 
   /**

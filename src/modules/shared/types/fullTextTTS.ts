@@ -103,7 +103,7 @@ export interface TTSSynthesizeResponse {
 export interface AudioCacheEntry {
   sliceIndex: number;
   audioBuffer: ArrayBuffer;
-  timepoints: TTSTimepoint[];
+  audioDuration: number; // 音频时长 (秒), 用于词时间估算
   blob?: Blob;
 }
 

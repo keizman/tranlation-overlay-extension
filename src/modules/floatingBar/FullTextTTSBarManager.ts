@@ -264,6 +264,24 @@ export class FullTextTTSBarManager {
       return;
     }
 
+    // 迁移：确保 fullTextTTSVoiceName 字段存在 (使用 sync storage，与 StorageService 一致)
+    try {
+      const result = await browser.storage.sync.get('user_settings');
+      const serializedData = result.user_settings;
+      if (serializedData) {
+        const storedSettings = JSON.parse(serializedData);
+        if (!storedSettings.fullTextTTSVoiceName) {
+          logger.log('迁移语音模型设置: 添加默认值 en-US-Standard-H');
+          storedSettings.fullTextTTSVoiceName = 'en-US-Standard-H';
+          await browser.storage.sync.set({
+            user_settings: JSON.stringify(storedSettings),
+          });
+        }
+      }
+    } catch (e) {
+      logger.warn('迁移语音模型设置失败:', e);
+    }
+
     // 检查是否有配置
     const activeConfig = settings.fullTextTTSConfigs.find(
       (c) => c.id === settings.activeFullTextTTSConfigId,
@@ -445,14 +463,18 @@ export class FullTextTTSBarManager {
   }
 
   /**
-   * 保存折叠状态
+   * 保存折叠状态 (使用 sync storage，与 StorageService 一致)
    */
   private async saveCollapsedState(collapsed: boolean): Promise<void> {
     try {
-      const stored = await browser.storage.local.get('settings');
-      if (stored.settings) {
-        stored.settings.fullTextTTSBarCollapsed = collapsed;
-        await browser.storage.local.set({ settings: stored.settings });
+      const result = await browser.storage.sync.get('user_settings');
+      const serializedData = result.user_settings;
+      if (serializedData) {
+        const storedSettings = JSON.parse(serializedData);
+        storedSettings.fullTextTTSBarCollapsed = collapsed;
+        await browser.storage.sync.set({
+          user_settings: JSON.stringify(storedSettings),
+        });
       }
     } catch (e) {
       logger.error('保存折叠状态失败:', e);

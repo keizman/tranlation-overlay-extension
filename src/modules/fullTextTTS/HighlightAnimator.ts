@@ -21,10 +21,6 @@ import {
   findCurrentWordIndex,
   type WordTiming,
 } from './WordTimingEstimator';
-import {
-  validateTimepoints,
-  estimateSentenceTimes,
-} from './TimepointValidator';
 
 const logger = createModuleLogger('HighlightAnimator');
 
@@ -205,68 +201,31 @@ export class HighlightAnimator {
   }
 
   /**
-   * 计算句子时长
-   * 注意: timepoints 标记的是句子的 END 时间，不是 START 时间
-   * 即 timepoints[i] 是第 i 个句子结束时的时间点
+   * 计算句子时长 (基于词数估算)
+   * 使用 Web Audio API 提供的精确音频时长 + 词数比例分配
    */
   private calculateSentenceDurations(
     sentences: SentenceInfo[],
-    timepoints: TTSTimepoint[],
+    _timepoints: TTSTimepoint[], // 不再使用 timepoints
     audioDuration: number,
   ): number[] {
-    // 验证 timepoints
-    const validation = validateTimepoints(
-      timepoints,
-      sentences.length,
-      audioDuration,
-      sentences,
-    );
-
-    if (validation.useFallback || !timepoints.length) {
-      // 使用 fallback 估算 - 记录警告以便调试
-      logger.warn(
-        `[FALLBACK] 切换到句子时长估算模式, 原因: ${validation.invalidReason || 'timepoints 为空或无效'}`,
-      );
-      const fallbackTimes =
-        validation.fallbackTimes ||
-        estimateSentenceTimes(sentences, audioDuration);
-      const durations: number[] = [];
-      for (let i = 0; i < fallbackTimes.length; i++) {
-        const nextTime = fallbackTimes[i + 1] ?? audioDuration;
-        durations.push(nextTime - fallbackTimes[i]);
-      }
-      return durations;
+    // 计算总词数
+    const totalWords = sentences.reduce((sum, s) => sum + s.wordCount, 0);
+    if (totalWords === 0) {
+      // 平均分配
+      const avgDuration = audioDuration / Math.max(sentences.length, 1);
+      return sentences.map(() => avgDuration);
     }
 
-    // 使用 timepoints 计算句子时长
-    // timepoints[i] 是第 i 个句子 END 的时间点
-    // 所以: duration[i] = timepoints[i] - timepoints[i-1] (第一个从 0 开始)
+    // 按词数比例分配时长
     const durations: number[] = [];
-    let prevEndTime = 0;
-    for (let i = 0; i < timepoints.length; i++) {
-      const endTime = timepoints[i].timeSeconds;
-      const duration = endTime - prevEndTime;
-      durations.push(duration);
-      prevEndTime = endTime;
+    for (const sentence of sentences) {
+      const ratio = sentence.wordCount / totalWords;
+      durations.push(audioDuration * ratio);
     }
 
-    // 如果句子数多于 timepoints，最后一个 timepoint 之后还有句子
-    // 剩余时间分配给剩余句子
-    if (sentences.length > durations.length) {
-      const remainingDuration = audioDuration - prevEndTime;
-      const remainingSentences = sentences.length - durations.length;
-      const avgDuration = remainingDuration / remainingSentences;
-      logger.log(
-        `[DEBUG] 句子数(${sentences.length}) > timepoints(${durations.length}), 剩余 ${remainingSentences} 句分配 ${remainingDuration.toFixed(2)}s`,
-      );
-      for (let i = 0; i < remainingSentences; i++) {
-        durations.push(avgDuration);
-      }
-    }
-
-    // 调试日志
     logger.log(
-      `[DEBUG] 句子时长: [${durations.map((d) => d.toFixed(2)).join(', ')}]s`,
+      `句子时长 (词数估算): [${durations.map((d) => d.toFixed(2)).join(', ')}]s, 总时长: ${audioDuration.toFixed(2)}s`,
     );
 
     return durations;

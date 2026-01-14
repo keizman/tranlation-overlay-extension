@@ -148,6 +148,11 @@ export class StorageService {
 
       const userSettings: UserSettings = JSON.parse(serializedData);
 
+      console.log(
+        '[StorageService] 读取设置 - fullTextTTSVoiceName:',
+        userSettings.fullTextTTSVoiceName,
+      );
+
       // 检查是否为旧格式配置，如果是则强制重置
       if (this.isOldFormatConfig(userSettings)) {
         console.log('[StorageService] 检测到旧格式配置，强制重置为新格式');
@@ -157,6 +162,11 @@ export class StorageService {
       }
 
       const validatedSettings = this.validateAndFixSettings(userSettings);
+
+      console.log(
+        '[StorageService] 验证后 - fullTextTTSVoiceName:',
+        validatedSettings.fullTextTTSVoiceName,
+      );
 
       if (this.hasConfigurationChanged(userSettings, validatedSettings)) {
         await this.saveUserSettings(validatedSettings);
@@ -184,6 +194,12 @@ export class StorageService {
     settings: UserSettings,
   ): Promise<StorageOperationResult> {
     try {
+      // 记录保存前的语音模型设置
+      console.log(
+        '[StorageService] 保存设置 - fullTextTTSVoiceName:',
+        settings.fullTextTTSVoiceName,
+      );
+
       // 验证设置
       if (this.config.enableValidation) {
         settings = this.validateAndFixSettings(settings);
@@ -192,9 +208,16 @@ export class StorageService {
       // 序列化数据
       const serializedData = JSON.stringify(settings);
 
+      console.log(
+        '[StorageService] 序列化后 - fullTextTTSVoiceName:',
+        JSON.parse(serializedData).fullTextTTSVoiceName,
+      );
+
       await browser.storage.sync.set({
         [this.storageKey]: serializedData,
       });
+
+      console.log('[StorageService] 保存成功 - storageKey:', this.storageKey);
 
       this.emitEvent(StorageEventType.SETTINGS_SAVED, settings);
       return { success: true, data: settings };

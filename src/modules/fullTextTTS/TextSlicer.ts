@@ -14,16 +14,11 @@
  *    - 避免密集 mark 导致事件丢失
  */
 
-import type {
-  TextSlice,
-  SSMLMark,
-  SentenceInfo,
-} from '../shared/types/fullTextTTS';
+import type { TextSlice, SentenceInfo } from '../shared/types/fullTextTTS';
 import {
   ENG_TTS_MAX_LENGTH,
   SPLIT_SEARCH_RANGE,
   SPLIT_DELIMITERS,
-  SENTENCE_DELIMITERS,
   SSML_BREAK_TIME,
 } from './constants';
 import { createModuleLogger } from '../shared/utils/DebugLogger';
@@ -148,21 +143,19 @@ export class TextSlicer {
    * 创建文本切片
    */
   private createSlice(text: string, startOffset: number): TextSlice {
-    // 先分句
+    // 分句 (用于词时间估算)
     const sentences = this.splitIntoSentences(text, startOffset);
-    // 生成句子级别的 marks
-    const marks = this.generateSentenceMarks(sentences, startOffset);
-    // 构建 SSML
-    const ssml = this.buildSSML(text, marks);
+    // 构建简化的 SSML (无 mark 标签)
+    const ssml = this.buildSSML(text);
 
-    logger.log(`创建切片: ${sentences.length} 句, ${marks.length} marks`);
+    logger.log(`创建切片: ${sentences.length} 句, 时长估算模式`);
 
     return {
       text,
       startOffset,
       endOffset: startOffset + text.length,
       ssml,
-      marks,
+      marks: [], // 不再使用 SSML marks
       sentences,
     };
   }
@@ -227,68 +220,12 @@ export class TextSlicer {
   }
 
   /**
-   * 生成句子级别的 SSML marks
-   * 在每个句子末尾插入一个 mark
+   * 构建 SSML 文本 (简化版本，无 mark 标签)
    */
-  private generateSentenceMarks(
-    sentences: SentenceInfo[],
-    startOffset: number,
-  ): SSMLMark[] {
-    const marks: SSMLMark[] = [];
-
-    for (let i = 0; i < sentences.length; i++) {
-      const sentence = sentences[i];
-      marks.push({
-        name: `s${i}`,
-        charOffset: sentence.endOffset, // 句子结束位置
-        sentenceIndex: i,
-        sentenceText: sentence.text,
-        wordCount: sentence.wordCount,
-      });
-    }
-
-    logger.log(`生成 ${marks.length} 个句子级 marks`);
-    return marks;
-  }
-
-  /**
-   * 构建 SSML 文本
-   * 在句末插入 mark 标签
-   */
-  private buildSSML(text: string, marks: SSMLMark[]): string {
+  private buildSSML(text: string): string {
     // 转义 SSML 特殊字符
-    let escapedText = this.escapeSSML(text);
-
-    // 按句末位置插入 marks (从后向前插入，避免影响索引)
-    // 创建一个 mark 插入位置的映射
-    const insertPositions: { position: number; markName: string }[] = [];
-
-    for (const mark of marks) {
-      // 在原文中找到句子结束位置
-      // 找到句末标点的位置
-      const sentenceEndChar = mark.sentenceText.slice(-1);
-      if (SENTENCE_DELIMITERS.test(sentenceEndChar)) {
-        // 句子以标点结尾，可用于在 SSML 中插入 mark
-      }
-      insertPositions.push({
-        position: mark.charOffset,
-        markName: mark.name,
-      });
-    }
-
-    // 简化方案：按句末标点位置在文本中插入 marks
-    // 使用正则替换在句末标点后插入 mark
-    let markIndex = 0;
-    escapedText = escapedText.replace(/([.!?;])/g, (match, p1) => {
-      if (markIndex < marks.length) {
-        const markTag = `${p1}<mark name="${marks[markIndex].name}"/>`;
-        markIndex++;
-        return markTag;
-      }
-      return match;
-    });
-
-    // 添加 speak 标签和 break
+    const escapedText = this.escapeSSML(text);
+    // 添加 speak 标签和开头 break
     return `<speak><break time="${SSML_BREAK_TIME}ms"/>${escapedText}</speak>`;
   }
 

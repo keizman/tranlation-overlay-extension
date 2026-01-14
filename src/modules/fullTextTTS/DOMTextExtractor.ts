@@ -18,11 +18,23 @@ const logger = createModuleLogger('DOMTextExtractor');
  * 需要排除的选择器
  */
 const EXCLUDE_SELECTORS = [
-  // 翻译相关
+  // 翻译相关 - 实际使用的类名
+  '.illa-paragraph-translation',
+  '.illa-paragraph-content',
+  '[data-illa-translated]',
+  // 翻译相关 - 通用选择器
   '.translation-overlay-text',
   '.translation-tooltip-container',
   '.translation-tooltip-content',
   '[data-translation-overlay]',
+  // 发音工具相关
+  '.wxt-translation-term',
+  '.wxt-original-word',
+  '.wxt-pronunciation-tooltip',
+  '[data-wxt-text-processed]',
+  // TTS 高亮相关 (避免读取自身包装的元素)
+  '.fulltext-tts-word',
+  '.fulltext-tts-highlight',
   // 脚本/样式
   'script',
   'style',

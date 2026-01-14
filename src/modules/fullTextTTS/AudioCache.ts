@@ -100,19 +100,19 @@ export class AudioCache {
 
     const loadPromise = (async (): Promise<AudioCacheEntry | null> => {
       try {
-        const { audioBuffer, timepoints } =
+        const { audioBuffer, audioDuration } =
           await this.provider.synthesizeToArrayBuffer(slice.ssml);
 
         const entry: AudioCacheEntry = {
           sliceIndex,
           audioBuffer,
-          timepoints,
+          audioDuration,
           blob: new Blob([audioBuffer], { type: 'audio/mpeg' }),
         };
 
         this.cache.set(sliceIndex, entry);
         logger.log(
-          `加载完成: slice ${sliceIndex}, buffer 大小: ${audioBuffer.byteLength}`,
+          `加载完成: slice ${sliceIndex}, 时长: ${audioDuration.toFixed(2)}s`,
         );
 
         // 加载完成后触发预加载（如果未暂停）

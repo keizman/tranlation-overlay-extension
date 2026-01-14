@@ -16,7 +16,7 @@ export const DEFAULT_TTS_ENDPOINT =
  */
 export const DEFAULT_VOICE_CONFIG = {
   languageCode: 'en-US',
-  name: 'en-US-Neural2-F',
+  name: 'en-US-Standard-H',
 };
 
 /**

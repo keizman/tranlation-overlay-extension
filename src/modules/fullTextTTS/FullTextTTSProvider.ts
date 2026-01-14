@@ -2,15 +2,7 @@
  * Google Cloud TTS API Provider
  * FullTextTTSProvider - 全文TTS API客户端
  *
- * 使用 v1beta1 API 支持 enableTimePointing 获取时间戳
- * 请求格式:
- * POST {endpoint}?key={apiKey}
- * Body: {
- *   input: { ssml: "<speak>...</speak>" },
- *   voice: { languageCode: "en-US", name: "en-US-Neural2-F" },
- *   audioConfig: { audioEncoding: "MP3" },
- *   enableTimePointing: ["SSML_MARK"]
- * }
+ * 简化版本：不使用 SSML mark，通过 Web Audio API 获取精确音频时长
  */
 
 import type {
@@ -44,7 +36,6 @@ interface SynthesizeRequest {
   audioConfig: {
     audioEncoding: 'MP3' | 'OGG_OPUS' | 'LINEAR16';
   };
-  enableTimePointing?: string[];
 }
 
 /**
@@ -66,6 +57,7 @@ interface APIResponse {
 export class FullTextTTSProvider {
   private config: FullTextTTSConfig;
   private customParams: Record<string, unknown> = {};
+  private voiceName: string = DEFAULT_VOICE_CONFIG.name;
 
   constructor(config: FullTextTTSConfig) {
     this.config = config;
@@ -95,6 +87,14 @@ export class FullTextTTSProvider {
   }
 
   /**
+   * 设置语音模型名称
+   */
+  setVoiceName(voiceName: string): void {
+    this.voiceName = voiceName;
+    logger.log(`语音模型已更新: ${voiceName}`);
+  }
+
+  /**
    * 合成语音
    * @param ssml SSML 格式的文本
    * @returns 音频内容和时间点
@@ -103,19 +103,41 @@ export class FullTextTTSProvider {
     const endpoint = this.config.apiEndpoint || DEFAULT_TTS_ENDPOINT;
     const url = `${endpoint}?key=${this.config.apiKey}`;
 
+    // 从存储中读取最新的语音模型设置 (使用 StorageService，更可靠)
+    let voiceName = this.voiceName;
+    try {
+      const { StorageService } = await import('../core/storage/StorageService');
+      const storageService = StorageService.getInstance();
+      const userSettings = await storageService.getUserSettings();
+
+      logger.log('读取存储中的语音模型设置:', {
+        storedVoiceName: userSettings?.fullTextTTSVoiceName,
+        defaultVoiceName: this.voiceName,
+      });
+
+      if (userSettings?.fullTextTTSVoiceName) {
+        voiceName = userSettings.fullTextTTSVoiceName;
+        logger.log('使用存储中的语音模型:', voiceName);
+      } else {
+        logger.log('未找到存储中的语音模型设置，使用默认值:', voiceName);
+      }
+    } catch (e) {
+      logger.warn('读取语音模型设置失败:', String(e));
+      // 忽略存储读取错误，使用默认值
+    }
+
     // 构建请求体
     const requestBody: SynthesizeRequest = {
       input: { ssml },
       voice: {
         languageCode: DEFAULT_VOICE_CONFIG.languageCode,
-        name: DEFAULT_VOICE_CONFIG.name,
+        name: voiceName || DEFAULT_VOICE_CONFIG.name,
         ...((this.customParams.voice as Record<string, string>) || {}),
       },
       audioConfig: {
         audioEncoding: DEFAULT_AUDIO_CONFIG.audioEncoding,
         ...((this.customParams.audioConfig as Record<string, string>) || {}),
       },
-      enableTimePointing: ['SSML_MARK'],
     };
 
     logger.log('发送 TTS 请求:', {
@@ -175,13 +197,13 @@ export class FullTextTTSProvider {
   }
 
   /**
-   * 合成并返回 ArrayBuffer
+   * 合成并返回 ArrayBuffer 和音频时长
    * @param ssml SSML 格式的文本
-   * @returns 音频 ArrayBuffer 和时间点
+   * @returns 音频 ArrayBuffer 和时长 (秒)
    */
   async synthesizeToArrayBuffer(ssml: string): Promise<{
     audioBuffer: ArrayBuffer;
-    timepoints: TTSTimepoint[];
+    audioDuration: number;
   }> {
     const response = await this.synthesize(ssml);
 
@@ -192,9 +214,33 @@ export class FullTextTTSProvider {
       bytes[i] = binaryString.charCodeAt(i);
     }
 
+    const audioBuffer = bytes.buffer;
+
+    // 使用 Web Audio API 获取精确音频时长
+    let audioDuration = 0;
+    try {
+      const audioContext = new (window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext)();
+      const decodedBuffer = await audioContext.decodeAudioData(
+        audioBuffer.slice(0),
+      );
+      audioDuration = decodedBuffer.duration;
+      audioContext.close();
+      logger.log(`音频时长: ${audioDuration.toFixed(2)}s`);
+    } catch (error) {
+      // 如果 Web Audio API 失败，估算时长 (基于 MP3 平均比特率)
+      // MP3 128kbps = 16 bytes/ms ≈ 16000 bytes/s
+      audioDuration = audioBuffer.byteLength / 16000;
+      logger.warn(
+        `Web Audio API 解码失败，估算时长: ${audioDuration.toFixed(2)}s`,
+        error,
+      );
+    }
+
     return {
-      audioBuffer: bytes.buffer,
-      timepoints: response.timepoints || [],
+      audioBuffer,
+      audioDuration,
     };
   }
 

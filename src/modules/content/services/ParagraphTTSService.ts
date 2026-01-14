@@ -49,7 +49,7 @@ export interface ParagraphTTSConfig {
 const DEFAULT_CONFIG: ParagraphTTSConfig = {
   minSegmentChars: 20,
   maxSegmentChars: 150,
-  doubleClickInterval: 1000,
+  doubleClickInterval: 400,
   driftThreshold: 500,
   speechRate: 1.0,
   totalHighlightDelay: 800, // 总延迟 1100ms，分配为 Web Speech 启动延迟 550ms + 高亮延迟 550ms

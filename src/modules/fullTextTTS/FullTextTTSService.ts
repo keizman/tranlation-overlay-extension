@@ -154,16 +154,13 @@ export class FullTextTTSService {
       // 先播放音频 (会解码并设置 duration)
       await this.audioPlayer.play(cacheEntry.audioBuffer);
 
-      // 获取音频时长
-      const audioDuration = this.audioPlayer.getDuration();
-
-      // 开始高亮同步 (传入 audioDuration 用于词级估算)
+      // 开始高亮同步 (使用缓存中的精确时长)
       this.highlightAnimator?.startSync(
         paragraph.element,
         slice,
-        cacheEntry.timepoints,
+        [], // 不再使用 timepoints，改用 audioDuration 估算
         () => this.audioPlayer?.getCurrentTime() || 0,
-        audioDuration,
+        cacheEntry.audioDuration, // 使用缓存中的精确时长
         true, // enableWordLevel - 可从用户设置读取
       );
 

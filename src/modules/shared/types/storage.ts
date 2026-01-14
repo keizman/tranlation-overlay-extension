@@ -66,6 +66,7 @@ export interface UserSettings {
   fullTextTTSBarCollapsed: boolean; // 底栏是否折叠 (刷新后保持)
   fullTextTTSConfigs: import('./fullTextTTS').FullTextTTSConfigItem[]; // TTS配置列表
   activeFullTextTTSConfigId: string; // 当前激活的配置ID
+  fullTextTTSVoiceName: string; // TTS 语音模型名称
 }
 
 // 右键菜单消息接口

@@ -126,4 +126,6 @@ export const DEFAULT_SETTINGS: UserSettings = {
     },
   ],
   activeFullTextTTSConfigId: 'default-tts-config',
+  //fullTextTTSVoiceName: 'en-US-Standard-H', // 默认语音模型
+  fullTextTTSVoiceName: 'en-US-Chirp3-HD-Erinome', // 默认语音模型
 };
