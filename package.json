@@ -1,5 +1,5 @@
 {
-  "name": "illa-helper",
+  "name": "side-translation",
   "description": "manifest.json description",
   "private": true,
   "version": "1.8.1",
@@ -17,6 +17,7 @@
     "zip:safari:dev": "wxt zip -b safari --mode development",
     "zip:all": "wxt zip -b chrome --mode production && wxt zip -b safari --mode production && wxt zip -b firefox --mode production",
     "release": "node scripts/release.js",
+    "pack:firefox": "node scripts/build-xpi.js",
     "compile": "vue-tsc --noEmit",
     "postinstall": "wxt prepare",
     "lint": "eslint .",
@@ -49,6 +50,7 @@
     "@typescript-eslint/eslint-plugin": "^8.34.1",
     "@typescript-eslint/parser": "^8.34.1",
     "@wxt-dev/module-vue": "^1.0.2",
+    "archiver": "^7.0.1",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.29.0",
     "eslint-config-prettier": "^10.1.5",

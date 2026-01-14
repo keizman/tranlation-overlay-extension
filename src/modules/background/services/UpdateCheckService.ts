@@ -190,7 +190,7 @@ export class UpdateCheckService {
       const response = await fetch(this.githubApiUrl, {
         headers: {
           Accept: 'application/vnd.github+json',
-          'User-Agent': 'illa-helper',
+          'User-Agent': 'side-translation',
         },
         cache: 'no-cache',
       });
@@ -280,7 +280,7 @@ export class UpdateCheckService {
       await browser.notifications.create(notificationId, {
         type: 'basic',
         iconUrl: '/icon/128.png',
-        title: '🎉 illa-helper 有新版本了！',
+        title: '🎉 Side Translation 有新版本了！',
         message: `发现新版本 v${updateInfo.latestVersion}，当前版本 v${updateInfo.currentVersion}。点击查看更新详情。`,
         buttons: [{ title: '查看更新' }, { title: '稍后提醒' }],
       });
@@ -331,12 +331,12 @@ export class UpdateCheckService {
         await browser.action.setBadgeText({ text: 'NEW' });
         await browser.action.setBadgeBackgroundColor({ color: '#ff4444' });
         await browser.action.setTitle({
-          title: '浸入式学语言助手 - 有新版本可用！点击查看详情',
+          title: 'Side Translation - 有新版本可用！点击查看详情',
         });
       } else {
         await browser.action.setBadgeText({ text: '' });
         await browser.action.setTitle({
-          title: '浸入式学语言助手',
+          title: 'Side Translation',
         });
       }
     } catch (error) {

@@ -25,12 +25,76 @@ const wordTTSLog = createModuleLogger('WordTTS');
 let globalAudioContext: AudioContext | null = null;
 let isAudioContextWarmedUp = false;
 
+// ==================== Word TTS 单例锁状态 ====================
+
+/**
+ * Word TTS 播放状态
+ * 用于防止重复点击导致多次请求
+ */
+let isWordTTSPlaying = false;
+let currentWordTTSUrl: string | null = null;
+let currentWordTTSSource: AudioBufferSourceNode | null = null;
+
+/**
+ * 停止当前 Word TTS 播放
+ */
+function stopCurrentWordTTS(): void {
+  if (currentWordTTSSource) {
+    try {
+      currentWordTTSSource.stop();
+      wordTTSLog.log('已停止当前 Word TTS 播放');
+    } catch (_e) {
+      // 可能已停止，忽略错误
+    }
+    currentWordTTSSource = null;
+  }
+  isWordTTSPlaying = false;
+  currentWordTTSUrl = null;
+}
+
+// ==================== 页面可见性监听 ====================
+
+/**
+ * 页面可见性变化时自动恢复 AudioContext
+ * 解决后台标签页返回后音频失效的问题
+ */
+let isVisibilityListenerSetup = false;
+
+function setupVisibilityListener(): void {
+  if (isVisibilityListenerSetup) return;
+  isVisibilityListenerSetup = true;
+
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible') {
+      wordTTSLog.log('页面恢复可见，检查 AudioContext 状态...');
+      try {
+        const ctx = getGlobalAudioContext();
+        if (ctx.state === 'suspended') {
+          wordTTSLog.log('AudioContext 被挂起，正在恢复...');
+          await ctx.resume();
+          wordTTSLog.log('AudioContext 已恢复, state:', ctx.state);
+        }
+      } catch (err) {
+        wordTTSLog.warn('恢复 AudioContext 失败:', err);
+      }
+    }
+  });
+
+  wordTTSLog.log('页面可见性监听已设置');
+}
+
 /**
  * 获取全局 AudioContext 单例
  * 如果不存在则创建，如果已关闭则重新创建
  */
 function getGlobalAudioContext(): AudioContext {
   if (!globalAudioContext || globalAudioContext.state === 'closed') {
+    // 如果 AudioContext 被关闭，重置预热状态
+    if (globalAudioContext?.state === 'closed') {
+      wordTTSLog.log('AudioContext 已关闭，重建并重置预热状态');
+      isAudioContextWarmedUp = false;
+    }
+
     const AudioContextClass =
       (window as any).AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) {
@@ -85,8 +149,9 @@ async function warmUpWordTTSAudio(): Promise<void> {
 /**
  * 使用 Web Audio API 播放音频 Blob
  * 比 HTML5 Audio 元素有更低的延迟和更精细的控制
+ * @returns AudioBufferSourceNode 引用，用于停止播放
  */
-async function playAudioWithWebAudioAPI(blob: Blob): Promise<void> {
+async function playWordTTSAudio(blob: Blob): Promise<AudioBufferSourceNode> {
   const audioContext = getGlobalAudioContext();
 
   // 确保 AudioContext 处于运行状态
@@ -105,14 +170,21 @@ async function playAudioWithWebAudioAPI(blob: Blob): Promise<void> {
   source.buffer = audioBuffer;
   source.connect(audioContext.destination);
 
-  return new Promise((resolve, reject) => {
-    source.onended = () => {
-      wordTTSLog.log('Web Audio API 播放结束');
-      resolve();
-    };
-    source.start(0);
-    wordTTSLog.log('Web Audio API 开始播放');
-  });
+  // 存储到全局引用
+  currentWordTTSSource = source;
+
+  source.onended = () => {
+    wordTTSLog.log('Web Audio API 播放结束');
+    // 播放结束后重置状态
+    isWordTTSPlaying = false;
+    currentWordTTSUrl = null;
+    currentWordTTSSource = null;
+  };
+
+  source.start(0);
+  wordTTSLog.log('Web Audio API 开始播放');
+
+  return source;
 }
 
 // Word TTS 事件委托是否已设置
@@ -122,10 +194,18 @@ let isWordTTSEventDelegationSetup = false;
  * 设置 Word TTS 事件委托
  * 使用 document 级别的事件监听，这样即使 DOM 被修改（如 WordHighlighter），
  * 点击事件仍然能被捕获并处理
+ *
+ * 单例锁逻辑:
+ * 1. 如果正在播放同一 URL，忽略点击
+ * 2. 如果正在播放不同 URL，停止当前并播放新的
+ * 3. 如果空闲，开始新播放
  */
 function setupWordTTSEventDelegation(): void {
   if (isWordTTSEventDelegationSetup) return;
   isWordTTSEventDelegationSetup = true;
+
+  // 同时设置页面可见性监听
+  setupVisibilityListener();
 
   document.addEventListener(
     'click',
@@ -149,13 +229,29 @@ function setupWordTTSEventDelegation(): void {
         '';
       if (!wordToSpeak) return;
 
-      wordTTSLog.log('Word TTS (委托):', wordToSpeak);
-
-      // 使用 Google TTS 代理 API
+      // 构建音频 URL
       const GOOGLE_TTS_BASE_URL =
         'https://translate.planktonfly.com/translate_tts';
       const GOOGLE_TTS_AUTH = 'Basic bXl1c2VyOjEyMzQ1NjY=';
       const audioUrl = `${GOOGLE_TTS_BASE_URL}?ie=UTF-8&client=gtx&tl=en-US&q=${encodeURIComponent(wordToSpeak)}`;
+
+      // ===== 单例锁逻辑 =====
+      if (isWordTTSPlaying) {
+        if (currentWordTTSUrl === audioUrl) {
+          // 正在播放同一单词，忽略重复点击
+          wordTTSLog.log('忽略重复点击，同一单词正在播放:', wordToSpeak);
+          return;
+        } else {
+          // 正在播放不同单词，停止当前播放
+          wordTTSLog.log('切换到新单词，停止当前播放:', wordToSpeak);
+          stopCurrentWordTTS();
+        }
+      }
+
+      // 标记正在播放
+      isWordTTSPlaying = true;
+      currentWordTTSUrl = audioUrl;
+      wordTTSLog.log('Word TTS (委托):', wordToSpeak);
 
       try {
         // 1. 先预热音频系统
@@ -174,12 +270,16 @@ function setupWordTTSEventDelegation(): void {
         if (response.ok) {
           const blob = await response.blob();
           wordTTSLog.log('下载完成, Blob:', blob.size, 'bytes');
-          await playAudioWithWebAudioAPI(blob);
+          await playWordTTSAudio(blob);
         } else {
           wordTTSLog.error('Request failed:', response.status);
+          // 请求失败也要重置状态
+          stopCurrentWordTTS();
         }
       } catch (error) {
         wordTTSLog.error('Error:', error);
+        // 异常也要重置状态
+        stopCurrentWordTTS();
       }
     },
     true,

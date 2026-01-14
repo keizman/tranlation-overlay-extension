@@ -16,10 +16,18 @@ const version = packageJson.version;
 export default defineConfig({
   modules: ['@wxt-dev/module-vue'],
   manifest: {
-    name: '浸入式学语言助手(illa-helper)',
+    name: 'Side Translation - 浸入式翻译助手',
     author: 'xiao1932794922@gmail.com' as any, // Firefox requires string, not object (WXT type mismatch)
-    description: `浸入式学语言助手(illa-helper) extension turns browsing into language learning. AI uses "i+1" theory, supports 20+ languages.`,
+    description: `Side Translation turns browsing into language learning. AI uses "i+1" theory, supports 20+ languages.`,
     version,
+    // Firefox 增量更新配置
+    browser_specific_settings: {
+      gecko: {
+        id: '{ec1a757b-3969-4e9a-86e9-c9cd54028a1f}',
+        update_url: 'https://storage.planktonfly.com/updates/update.json',
+        strict_min_version: '109.0',
+      },
+    },
     // contextMenus not supported on Firefox Android, use only common permissions
     permissions: ['storage', 'notifications', 'activeTab', 'webNavigation'],
     host_permissions: ['<all_urls>', 'https://api.github.com/*'],

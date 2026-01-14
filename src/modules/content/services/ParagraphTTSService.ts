@@ -67,9 +67,16 @@ let isParagraphAudioWarmedUp = false;
 
 /**
  * 获取全局 AudioContext 单例
+ * 如果不存在则创建，如果已关闭则重新创建
  */
 function getParagraphAudioContext(): AudioContext {
   if (!paragraphAudioContext || paragraphAudioContext.state === 'closed') {
+    // 如果 AudioContext 被关闭，重置预热状态
+    if (paragraphAudioContext?.state === 'closed') {
+      log('AudioContext 已关闭，重建并重置预热状态');
+      isParagraphAudioWarmedUp = false;
+    }
+
     const AudioContextClass =
       (window as any).AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) {
@@ -81,6 +88,53 @@ function getParagraphAudioContext(): AudioContext {
     return newContext;
   }
   return paragraphAudioContext;
+}
+
+// ==================== 页面可见性监听 ====================
+
+/**
+ * 页面可见性变化时自动恢复 AudioContext
+ * 解决后台标签页返回后音频失效的问题
+ */
+let isParagraphVisibilityListenerSetup = false;
+
+function handleParagraphVisibilityChange(): void {
+  if (document.visibilityState === 'visible') {
+    log('页面恢复可见，检查 AudioContext 状态...');
+    try {
+      const ctx = getParagraphAudioContext();
+      if (ctx.state === 'suspended') {
+        log('AudioContext 被挂起，正在恢复...');
+        ctx.resume().then(() => {
+          log('AudioContext 已恢复, state:', ctx.state);
+        });
+      }
+    } catch (err) {
+      warn('恢复 AudioContext 失败:', err);
+    }
+  }
+}
+
+function setupParagraphVisibilityListener(): void {
+  if (isParagraphVisibilityListenerSetup) return;
+  isParagraphVisibilityListenerSetup = true;
+
+  document.addEventListener(
+    'visibilitychange',
+    handleParagraphVisibilityChange,
+  );
+  log('页面可见性监听已设置');
+}
+
+function removeParagraphVisibilityListener(): void {
+  if (!isParagraphVisibilityListenerSetup) return;
+  isParagraphVisibilityListenerSetup = false;
+
+  document.removeEventListener(
+    'visibilitychange',
+    handleParagraphVisibilityChange,
+  );
+  log('页面可见性监听已移除');
 }
 
 /**
@@ -198,6 +252,9 @@ export class ParagraphTTSService {
 
     // 预热音频系统，消除首次播放延迟
     this.warmUpAudioSystem();
+
+    // 设置页面可见性监听，解决后台标签页音频失效问题
+    setupParagraphVisibilityListener();
   }
 
   /**
@@ -214,6 +271,10 @@ export class ParagraphTTSService {
   disable(): void {
     document.removeEventListener('click', this.handleClick);
     this.stop();
+
+    // 移除页面可见性监听
+    removeParagraphVisibilityListener();
+
     log('❌ 服务已禁用');
   }
 

@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "illa-helper"
+    "title": "Side Translation"
   },
   "common": {
     "tip": "💡",
@@ -361,11 +361,11 @@
     "daysAgo": "{days}天前"
   },
   "about": {
-    "title": "关于 浸入式学语言助手 (illa-helper)",
-    "logoAlt": "浸入式学语言助手 illa-helper Logo",
-    "appName": "浸入式学语言助手 (illa-helper)",
+    "title": "关于 Side Translation",
+    "logoAlt": "Side Translation Logo",
+    "appName": "Side Translation",
     "version": "版本 {version}",
-    "description": "浸入式学语言助手 (illa-helper) 是一款基于 'i+1' 可理解输入理论的浏览器扩展，旨在通过沉浸式翻译和发音学习生态系统，帮助您在日常浏览中轻松、高效地学习外语。",
+    "description": "Side Translation 是一款基于 'i+1' 可理解输入理论的浏览器扩展，旨在通过沉浸式翻译和发音学习生态系统，帮助您在日常浏览中轻松、高效地学习外语。",
     "coreFeatures": "核心功能",
     "features": {
       "smartTranslation": {
@@ -446,7 +446,7 @@
     }
   },
   "options": {
-    "title": "浸入式学语言助手 illa-helper",
+    "title": "Side Translation",
     "toggleTheme": "切换主题",
     "basic": "基本设置",
     "translation": "翻译服务",

@@ -1,0 +1,13 @@
+{
+  "addons": {
+    "{ec1a757b-3969-4e9a-86e9-c9cd54028a1f}": {
+      "updates": [
+        {
+          "version": "1.8.1",
+          "update_link": "https://storage.planktonfly.com/updates/archive/side-translation-1.8.1.xpi",
+          "update_hash": "sha256:84b5305f63c240e31297143a9a58271b62a5cd82e57b014d9d01a308d9ed1aeb"
+        }
+      ]
+    }
+  }
+}

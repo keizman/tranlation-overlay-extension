@@ -35,3 +35,4 @@ web-ext.config.ts
 .env.submit
 web-ext-artifacts/
 
+dist/
