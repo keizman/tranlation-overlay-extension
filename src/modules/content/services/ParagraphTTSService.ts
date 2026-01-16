@@ -367,6 +367,11 @@ export class ParagraphTTSService {
     log('准备高亮...');
     this.highlighter.prepare(element);
 
+    // 清除音频缓存并预加载前两个片段
+    this.audioCache.clear();
+    this.preloadSegment(0); // 预加载当前
+    this.preloadSegment(1); // 预加载下一个
+
     // 播放第一个片段
     log('开始播放第一个片段...');
     await this.playSegment(this.currentSegmentIndex);
@@ -377,6 +382,9 @@ export class ParagraphTTSService {
    */
   private async playSegment(index: number): Promise<void> {
     log(`playSegment(${index}) - 总共 ${this.segments.length} 个`);
+
+    // 预加载下一个片段 (如果还没有)
+    this.preloadSegment(index + 1);
 
     if (index >= this.segments.length) {
       log('所有片段播放完成');
@@ -419,7 +427,8 @@ export class ParagraphTTSService {
 
       // 先启动 Google TTS，给它独占的启动时间以避免音频焦点冲突
       log('开始 Google TTS...');
-      const googleTTSPromise = this.startGoogleTTS(text);
+      // 传入 index 和 text，利用内部缓存
+      const googleTTSPromise = this.startGoogleTTS(index, text);
 
       // 延迟启动 Web Speech（静音获取词边界）
       const webSpeechPromise = new Promise<void>((resolve) => {
@@ -504,17 +513,52 @@ export class ParagraphTTSService {
     });
   }
 
+  // Audio Cache
+  private audioCache = new Map<number, Promise<Blob | null>>();
+
+  /**
+   * 预加载指定片段的音频
+   */
+  private preloadSegment(index: number): void {
+    if (index >= this.segments.length) return;
+    if (this.audioCache.has(index)) return;
+
+    log(`预加载片段[${index}]...`);
+    const text = this.segments[index];
+    const promise = this.loadAudioBlob(text);
+    this.audioCache.set(index, promise);
+  }
+
+  /**
+   * 获取或加载音频
+   */
+  private getOrLoadAudio(index: number, text: string): Promise<Blob | null> {
+    if (this.audioCache.has(index)) {
+      log(`命中缓存片段[${index}]`);
+      return this.audioCache.get(index)!;
+    }
+    log(`缓存未命中，直接加载片段[${index}]`);
+    const promise = this.loadAudioBlob(text);
+    this.audioCache.set(index, promise);
+    return promise;
+  }
+
   /**
    * Google TTS 播放音频
-   * 添加超时兜底，防止 onended 事件丢失导致卡住
+   * 改为支持预加载模式：先获取 Blob (可能来自缓存)，再播放
+   * @param onPlayStart 音频开始播放时的回调
    */
-  private startGoogleTTS(text: string): Promise<void> {
-    return new Promise((resolve) => {
-      const url = `${GOOGLE_TTS_BASE_URL}?ie=UTF-8&client=gtx&tl=en&q=${encodeURIComponent(text)}`;
-      log('Google TTS URL:', url);
+  private async startGoogleTTS(
+    index: number,
+    text: string,
+    onPlayStart?: () => void,
+  ): Promise<void> {
+    log('Google TTS 准备播放, Index:', index);
 
+    return new Promise((resolve) => {
       let isResolved = false;
       let timeoutId: number | null = null;
+      let hasStarted = false;
 
       const safeResolve = () => {
         if (isResolved) return;
@@ -532,7 +576,7 @@ export class ParagraphTTSService {
         // ⚠️ 关键：清除当前片段的高亮定时器，防止旧片段的高亮继续执行
         this.clearPendingTimeouts();
 
-        // 取消当前 Web Speech（用于词边界检测的静音语音）
+        // 取消当前 Web Speech (用于词边界检测的静音语音)
         if (this.synth) {
           this.synth.cancel();
           log('已取消 Web Speech');
@@ -547,8 +591,12 @@ export class ParagraphTTSService {
         safeResolve();
       };
 
-      this.fetchGoogleAudio(url, text)
-        .then(async (blob) => {
+      // 使用立即执行异步函数来处理 async/await 逻辑
+      (async () => {
+        try {
+          // 1. 获取音频 (可能已预加载)
+          const blob = await this.getOrLoadAudio(index, text);
+
           if (!blob) {
             warn('Google TTS 返回空 blob');
             moveToNextSegment();
@@ -557,73 +605,71 @@ export class ParagraphTTSService {
 
           log('Google TTS blob 大小:', blob.size, 'bytes');
 
-          try {
-            // 使用 Web Audio API 播放（低延迟）
-            const audioContext = getParagraphAudioContext();
+          // 使用 Web Audio API 播放（低延迟）
+          const audioContext = getParagraphAudioContext();
 
-            if (audioContext.state === 'suspended') {
-              log('AudioContext 被挂起，正在恢复...');
-              await audioContext.resume();
-            }
-
-            const arrayBuffer = await blob.arrayBuffer();
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-            const duration = audioBuffer.duration;
-            log('✓ 音频解码完成，时长:', duration, 's');
-
-            // 设置超时兜底：音频时长 + 5秒缓冲
-            const timeoutMs = (duration + 5) * 1000;
-            timeoutId = window.setTimeout(() => {
-              if (!isResolved) {
-                warn(`⚠️ 音频超时 (${timeoutMs}ms)，强制跳到下一段`);
-                moveToNextSegment();
-              }
-            }, timeoutMs);
-            log('设置超时兜底:', timeoutMs, 'ms');
-
-            // 创建音频源并播放
-            const source = audioContext.createBufferSource();
-            source.buffer = audioBuffer;
-            source.connect(audioContext.destination);
-
-            // 存储音频源引用，以便 stop() 时可以立即停止
-            this.currentAudioSource = source;
-
-            source.onended = () => {
-              log('✓ Web Audio API 播放结束 (onended)');
-              this.currentAudioSource = null; // 播放结束后清除引用
-              moveToNextSegment();
-            };
-
-            source.start(0);
-            log('✓ Web Audio API 开始播放');
-          } catch (audioErr) {
-            error('Web Audio API 播放失败:', audioErr);
-            moveToNextSegment();
+          if (audioContext.state === 'suspended') {
+            log('AudioContext 被挂起，正在恢复...');
+            await audioContext.resume();
           }
-        })
-        .catch((err) => {
-          error('fetchGoogleAudio 失败:', err);
+
+          const arrayBuffer = await blob.arrayBuffer();
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+          const duration = audioBuffer.duration;
+          log('✓ 音频解码完成，时长:', duration, 's');
+
+          // 设置超时兜底：音频时长 + 5秒缓冲
+          const timeoutMs = (duration + 5) * 1000;
+          timeoutId = window.setTimeout(() => {
+            if (!isResolved) {
+              warn(`⚠️ 音频超时 (${timeoutMs}ms)，强制跳到下一段`);
+              moveToNextSegment();
+            }
+          }, timeoutMs);
+
+          // 创建音频源并播放
+          const source = audioContext.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(audioContext.destination);
+
+          // 存储音频源引用，以便 stop() 时可以立即停止
+          this.currentAudioSource = source;
+
+          source.onended = () => {
+            log('✓ Web Audio API 播放结束 (onended)');
+            this.currentAudioSource = null; // 播放结束后清除引用
+            moveToNextSegment();
+          };
+
+          source.start(0);
+          log('✓ Web Audio API 开始播放');
+
+          // 关键修复：音频开始播放时，才触发高亮动画
+          if (onPlayStart && !hasStarted) {
+            hasStarted = true;
+            onPlayStart();
+          }
+        } catch (err) {
+          error('Google TTS 播放流程异常:', err);
           moveToNextSegment();
-        });
+        }
+      })();
     });
   }
 
   /**
-   * 获取 Google TTS 音频
+   * 加载音频 Blob (原 fetchGoogleAudio)
    */
-  private async fetchGoogleAudio(
-    url: string,
-    text: string,
-  ): Promise<Blob | null> {
+  private async loadAudioBlob(text: string): Promise<Blob | null> {
+    const url = `${GOOGLE_TTS_BASE_URL}?ie=UTF-8&client=gtx&tl=en&q=${encodeURIComponent(text)}`;
     log(
       `fetchGoogleAudio: 文本长度=${text.length}, 前30字="${text.substring(0, 30)}..."`,
     );
 
     // 检查文本长度限制
     if (text.length > 200) {
-      warn(`文本过长 (${text.length} 字符)，Google TTS 可能限制 ~200 字符`);
+      warn(`文本过长(${text.length} 字符)，Google TTS 可能限制 ~200 字符`);
     }
 
     try {
@@ -796,7 +842,7 @@ export class ParagraphTTSService {
     }
 
     const text = clone.innerText.trim();
-    log(`getOriginalText: 原文长度=${text.length}, 排除翻译元素后`);
+    log(`getOriginalText: 原文长度 = ${text.length}, 排除翻译元素后`);
     return text;
   }
 
@@ -828,7 +874,7 @@ export class ParagraphTTSService {
 
       if (isBlockElement && current.innerText.trim().length > 10) {
         log(
-          `findParagraph: 深度=${depth}, tag=${tagName}, 长度=${current.innerText.length}`,
+          `findParagraph: 深度 = ${depth}, tag = ${tagName}, 长度 = ${current.innerText.length}`,
         );
         return current;
       }

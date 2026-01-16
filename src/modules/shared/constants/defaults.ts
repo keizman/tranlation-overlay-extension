@@ -62,7 +62,7 @@ export const DEFAULT_FLOATING_BALL_CONFIG: FloatingBallConfig = {
 // 默认懒加载配置 - 简化版本
 export const DEFAULT_LAZY_LOADING_CONFIG: LazyLoadingConfig = {
   enabled: true, //  懒加载开关
-  preloadDistance: 0.5, // 固定提前半屏预加载
+  preloadDistance: 1, // 固定提前半屏预加载- 改为 1
 };
 
 // 创建默认API配置项的函数

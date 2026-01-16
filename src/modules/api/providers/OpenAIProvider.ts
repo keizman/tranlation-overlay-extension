@@ -64,9 +64,9 @@ export class OpenAIProvider extends BaseProvider {
       return sendApiRequest(requestBody, this.config, timeout);
     };
 
-    // Retry logic: 3 attempts with 500ms delay
+    // Retry logic: 3 attempts with exponential backoff
     const MAX_RETRIES = 3;
-    const RETRY_DELAY_MS = 500;
+    const INITIAL_RETRY_DELAY_MS = 1000;
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -78,7 +78,19 @@ export class OpenAIProvider extends BaseProvider {
           return this.extractReplacements(data, text);
         }
 
-        // Non-200 response
+        // Handle non-200 responses
+        // Only retry on 429 (Rate Limit) or 5xx (Server Errors)
+        const shouldRetry = response.status === 429 || response.status >= 500;
+
+        if (!shouldRetry) {
+          console.warn(
+            `[OpenAI] 请求失败 (不可重试): ${response.status} ${response.statusText}`,
+          );
+          throw new Error(
+            `API 请求失败: ${response.status} ${response.statusText}`,
+          );
+        }
+
         console.warn(
           `[OpenAI] 请求失败 (尝试 ${attempt + 1}/${MAX_RETRIES}): ${response.status} ${response.statusText}`,
         );
@@ -86,9 +98,10 @@ export class OpenAIProvider extends BaseProvider {
           `API 请求失败: ${response.status} ${response.statusText}`,
         );
 
-        // Wait before retry (except for last attempt)
+        // Exponential backoff: 1s, 2s, 4s...
         if (attempt < MAX_RETRIES - 1) {
-          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+          const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt);
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       } catch (error: any) {
         console.warn(
@@ -97,8 +110,10 @@ export class OpenAIProvider extends BaseProvider {
         );
         lastError = error;
 
+        // For network errors/exceptions, always retry with backoff
         if (attempt < MAX_RETRIES - 1) {
-          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+          const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt);
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     }

@@ -131,7 +131,7 @@ export class LazyLoadingService {
     // 延迟处理，避免频繁触发
     this.processingTimer = window.setTimeout(() => {
       this.processAllQueuedSegments();
-    }, 100);
+    }, 50);
   }
 
   /**
@@ -160,26 +160,28 @@ export class LazyLoadingService {
     }
 
     try {
-      // 使用 RequestIdleCallback 优化性能（如果支持）
-      if ('requestIdleCallback' in window) {
-        window.requestIdleCallback(async () => {
-          await this.processingCallback!(segmentsToProcess);
-        });
-      } else {
-        await this.processingCallback(segmentsToProcess);
-      }
+      // 直接执行，不再等待空闲时间，确保滚动时及时响应
+      // scheduleProcessing 已经有 100ms 的防抖，这里不需要再延迟
+      await this.processingCallback(segmentsToProcess);
 
       // 标记为已处理并从缓存中移除
       segmentsToProcess.forEach((segment) => {
         this.state.processedSegments.add(segment.fingerprint);
         this.state.processingQueue.delete(segment.fingerprint);
         this.state.segmentCache.delete(segment.fingerprint);
+
+        // 关键：处理完后停止观察，释放资源
+        if (this.observer) {
+          this.observer.unobserve(segment);
+        }
       });
     } catch (_) {
       // 即使失败也要清理队列，避免重复处理
       segmentsToProcess.forEach((segment) => {
         this.state.processingQueue.delete(segment.fingerprint);
         this.state.segmentCache.delete(segment.fingerprint);
+        // 失败时不停止观察，可能需要重试？或者也停止以免无限重试？
+        // 目前策略：失败也视为已处理（避免死循环），用户需刷新重试
       });
     } finally {
       this.processingTimer = null;
