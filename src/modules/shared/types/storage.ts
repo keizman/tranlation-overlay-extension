@@ -20,6 +20,16 @@ import type { ApiConfigItem, MultilingualConfig } from './api';
 import type { TooltipHotkey, FloatingBallConfig } from './ui';
 import type { TTSProviderType } from '../../pronunciation/types';
 
+// 新增：段落TTS设置
+export interface ParagraphTTSSettings {
+  enabled: boolean;
+}
+
+// 新增：手势翻译设置
+export interface GestureTranslationSettings {
+  enabled: boolean;
+}
+
 // 用户设置主接口
 export interface UserSettings {
   userLevel: UserLevel;
@@ -69,6 +79,10 @@ export interface UserSettings {
   fullTextTTSVoiceName: string; // TTS 语音模型名称
   // 新增：词典卡片设置
   wordCard: WordCardSettings;
+  // 新增：段落TTS设置
+  paragraphTTS: ParagraphTTSSettings;
+  // 新增：手势翻译设置
+  gestureTranslation: GestureTranslationSettings;
 }
 
 // 词典卡片设置接口

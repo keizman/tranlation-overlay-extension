@@ -142,4 +142,12 @@ export const DEFAULT_SETTINGS: UserSettings = {
   fullTextTTSVoiceName: 'en-US-Chirp3-HD-Erinome', // 默认语音模型
   // 词典卡片设置
   wordCard: DEFAULT_WORD_CARD_CONFIG,
+  // 段落TTS设置
+  paragraphTTS: {
+    enabled: true, // 默认开启
+  },
+  // 手势翻译设置
+  gestureTranslation: {
+    enabled: true, // 默认开启
+  },
 };
