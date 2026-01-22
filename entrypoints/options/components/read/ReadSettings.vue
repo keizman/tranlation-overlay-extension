@@ -124,12 +124,93 @@
         </CollapsibleContent>
       </Card>
     </Collapsible>
+
+    <!-- Gesture Translation Settings -->
+    <Collapsible v-model:open="isOpenGestureTranslation" class="space-y-2">
+      <Card>
+        <CardHeader class="py-4">
+          <CollapsibleTrigger class="w-full">
+            <div class="flex items-center justify-between cursor-pointer">
+              <div class="flex items-center gap-3">
+                <div
+                  class="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center"
+                >
+                  <Repeat
+                    class="h-4 w-4 text-purple-600 dark:text-purple-400"
+                  />
+                </div>
+                <div class="text-left">
+                  <h3 class="text-base font-semibold text-foreground">
+                    行监控 (Row Monitoring)
+                  </h3>
+                  <p class="text-sm text-muted-foreground">滑动段落进行翻译</p>
+                </div>
+              </div>
+              <ChevronDown
+                class="h-5 w-5 text-muted-foreground transition-transform duration-200"
+                :class="{ 'rotate-180': isOpenGestureTranslation }"
+              />
+            </div>
+          </CollapsibleTrigger>
+        </CardHeader>
+        <CollapsibleContent>
+          <CardContent class="pt-0 border-t">
+            <div class="space-y-6 pt-6">
+              <!-- Left Swipe (Translate) -->
+              <div
+                class="flex items-center justify-between p-4 bg-muted/50 rounded-lg border border-border/50"
+              >
+                <div class="flex items-center gap-3">
+                  <div class="space-y-0.5">
+                    <Label class="text-base font-semibold">
+                      左滑翻译 (Left Swipe)
+                    </Label>
+                    <p class="text-sm text-muted-foreground">
+                      左滑显示/隐藏翻译
+                    </p>
+                  </div>
+                </div>
+                <!-- Need to ensure settings structure matches default if not yet migrated. Default has gestureTranslation object -->
+                <Switch
+                  v-model:checked="settings.gestureTranslation.leftSwipe"
+                />
+              </div>
+
+              <!-- Right Swipe (Hide) -->
+              <div
+                class="flex items-center justify-between p-4 bg-muted/50 rounded-lg border border-border/50"
+              >
+                <div class="flex items-center gap-3">
+                  <div class="space-y-0.5">
+                    <Label class="text-base font-semibold">
+                      右滑隐藏 (Right Swipe)
+                    </Label>
+                    <p class="text-sm text-muted-foreground">
+                      右滑快速隐藏翻译内容
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  v-model:checked="settings.gestureTranslation.rightSwipe"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue';
-import { BookOpen, Book, ChevronDown, CheckCircle } from 'lucide-vue-next';
+import {
+  BookOpen,
+  Book,
+  ChevronDown,
+  CheckCircle,
+  Repeat,
+} from 'lucide-vue-next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -150,6 +231,7 @@ import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
 const wordCardOpen = ref(true);
+const isOpenGestureTranslation = ref(true);
 
 const emit = defineEmits<{
   saveMessage: [message: string];

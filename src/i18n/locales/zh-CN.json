@@ -589,6 +589,14 @@
   "listenSettings": {
     "title": "听力设置",
     "description": "配置语音朗读(TTS)和听力练习工具",
+    "paragraphTTS": {
+      "title": "段落朗读",
+      "description": "点击段落播放音频",
+      "enable": "启用段落朗读",
+      "enableDescription": "点击任意段落即可朗读该段落内容",
+      "tipTitle": "使用方法",
+      "tipContent": "点击页面中的任意段落即可播放其音频，再次点击可停止播放。"
+    },
     "ttsService": {
       "title": "TTS服务",
       "description": "全文朗读和发音设置"

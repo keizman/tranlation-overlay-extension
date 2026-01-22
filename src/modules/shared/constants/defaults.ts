@@ -148,6 +148,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   },
   // 手势翻译设置
   gestureTranslation: {
-    enabled: true, // 默认开启
+    leftSwipe: true,
+    rightSwipe: true,
   },
 };

@@ -4,7 +4,7 @@
  * 支持切换模式：首次右滑翻译，再次右滑恢复原始
  */
 
-import { TranslationTriggerMode } from '@/src/modules/shared/types/core';
+import { fetchGoogleTranslation } from '../utils/GoogleTranslateUtils';
 
 export interface SwipeConfig {
   minSwipeDistance: number; // 最小滑动距离 (px)
@@ -15,12 +15,14 @@ export interface SwipeConfig {
 const DEFAULT_SWIPE_CONFIG: SwipeConfig = {
   minSwipeDistance: 80,
   maxSwipeTime: 500,
-  swipeDirection: 'right',
+  swipeDirection: 'left', // 默认为左滑
 };
 
 // 标记已翻译的元素属性
 const TRANSLATED_ATTR = 'data-wxt-swipe-translated';
-const ORIGINAL_HTML_ATTR = 'data-wxt-original-html';
+const _ORIGINAL_HTML_ATTR = 'data-wxt-original-html';
+// 缓存键属性
+const _CACHE_KEY_ATTR = 'data-wxt-cache-key';
 
 export class SwipeTranslationService {
   private config: SwipeConfig;
@@ -29,8 +31,13 @@ export class SwipeTranslationService {
   private touchStartY: number = 0;
   private touchStartTime: number = 0;
   private targetElement: HTMLElement | null = null;
-  private onSwipeTranslate: ((element: HTMLElement) => Promise<void>) | null =
-    null;
+
+  // 简单内存缓存：原文哈希/前缀 -> 翻译文本
+  private translationCache = new Map<string, string>();
+
+  // 标记翻译容器的类名
+  private readonly TRANSLATION_CONTAINER_CLASS =
+    'wxt-immersive-translation-container';
 
   constructor(config: Partial<SwipeConfig> = {}) {
     this.config = { ...DEFAULT_SWIPE_CONFIG, ...config };
@@ -39,11 +46,10 @@ export class SwipeTranslationService {
   /**
    * 启用滑动翻译
    */
-  enable(onSwipeTranslate: (element: HTMLElement) => Promise<void>): void {
+  enable(): void {
     if (this.isEnabled) return;
 
     this.isEnabled = true;
-    this.onSwipeTranslate = onSwipeTranslate;
 
     document.addEventListener('touchstart', this.handleTouchStart, {
       passive: true,
@@ -51,10 +57,11 @@ export class SwipeTranslationService {
     document.addEventListener('touchend', this.handleTouchEnd, {
       passive: true,
     });
+    // 鼠标事件仅用于测试，实际移动端主要靠 touch
     document.addEventListener('mousedown', this.handleMouseDown);
     document.addEventListener('mouseup', this.handleMouseUp);
 
-    console.log('[SwipeTranslation] 已启用滑动翻译');
+    console.log('[SwipeTranslation] 已启用滑动翻译 (左滑)');
   }
 
   /**
@@ -64,7 +71,6 @@ export class SwipeTranslationService {
     if (!this.isEnabled) return;
 
     this.isEnabled = false;
-    this.onSwipeTranslate = null;
 
     document.removeEventListener('touchstart', this.handleTouchStart);
     document.removeEventListener('touchend', this.handleTouchEnd);
@@ -75,15 +81,17 @@ export class SwipeTranslationService {
   }
 
   /**
-   * 根据设置更新状态
+   * 更新配置 (包括右滑设置)
    */
-  updateFromSettings(
-    triggerMode: TranslationTriggerMode,
-    onSwipeTranslate: (element: HTMLElement) => Promise<void>,
-  ): void {
-    if (triggerMode === TranslationTriggerMode.SWIPE) {
-      this.enable(onSwipeTranslate);
+  updateSettings(settings: { leftSwipe: boolean; rightSwipe: boolean }): void {
+    // 只要开启其中一个，就启用服务监听
+    if (settings.leftSwipe || settings.rightSwipe) {
+      (this.config as any).leftSwipe = settings.leftSwipe;
+      (this.config as any).rightSwipe = settings.rightSwipe;
+      this.enable();
     } else {
+      (this.config as any).leftSwipe = false;
+      (this.config as any).rightSwipe = false;
       this.disable();
     }
   }
@@ -130,24 +138,29 @@ export class SwipeTranslationService {
     const deltaY = endY - this.touchStartY;
     const duration = Date.now() - this.touchStartTime;
 
-    // 检查是否是有效的水平滑动
     const isHorizontalSwipe = Math.abs(deltaX) > Math.abs(deltaY) * 2;
     const isValidDistance = Math.abs(deltaX) >= this.config.minSwipeDistance;
     const isValidTime = duration <= this.config.maxSwipeTime;
-    const isRightSwipe =
-      this.config.swipeDirection === 'right' ? deltaX > 0 : deltaX < 0;
 
     if (
       isHorizontalSwipe &&
       isValidDistance &&
       isValidTime &&
-      isRightSwipe &&
       this.targetElement
     ) {
-      console.log(
-        `[SwipeTranslation] 检测到右滑 (${Math.abs(deltaX)}px, ${duration}ms)`,
-      );
-      this.handleSwipeAction(this.targetElement);
+      const isLeftSwipe = deltaX < 0;
+      const isRightSwipe = deltaX > 0;
+
+      // 左滑 -> 翻译 (如果启用)
+      if (isLeftSwipe && (this.config as any).leftSwipe) {
+        console.log(`[SwipeTranslation] 左滑 -> 触发翻译`);
+        this.handleLeftSwipe(this.targetElement);
+      }
+      // 右滑 -> 隐藏 (如果启用)
+      else if (isRightSwipe && (this.config as any).rightSwipe) {
+        console.log(`[SwipeTranslation] 右滑 -> 隐藏翻译`);
+        this.handleRightSwipe(this.targetElement);
+      }
     }
 
     // 重置状态
@@ -158,60 +171,138 @@ export class SwipeTranslationService {
   }
 
   /**
-   * 处理滑动动作 - 切换模式
-   * 情况1：无翻译 -> 触发翻译
-   * 情况2：有翻译（自动或滑动触发） -> 隐藏/恢复翻译
+   * 左滑处理：显示翻译
    */
-  private async handleSwipeAction(element: HTMLElement): Promise<void> {
-    // 检查是否由滑动触发的翻译
-    const isSwipeTranslated = element.hasAttribute(TRANSLATED_ATTR);
+  private async handleLeftSwipe(element: HTMLElement): Promise<void> {
+    const isTranslated = element.hasAttribute(TRANSLATED_ATTR);
 
-    // 检查是否存在自动翻译的内容（通过自动翻译模式添加的翻译标注）
-    const translationTerms = element.querySelectorAll('.wxt-translation-term');
-    const hasAutoTranslations = translationTerms.length > 0;
+    // 获取现有的翻译容器
+    const existingContainer = element.nextElementSibling;
+    const hasExistingContainer =
+      existingContainer &&
+      existingContainer.classList.contains(this.TRANSLATION_CONTAINER_CLASS);
 
-    // 检查自动翻译是否已被隐藏
-    const isTranslationHidden =
-      hasAutoTranslations &&
-      (translationTerms[0] as HTMLElement).style.display === 'none';
-
-    if (isSwipeTranslated) {
-      // 滑动翻译的段落 -> 恢复原始（移除所有翻译）
-      this.restoreOriginal(element);
-    } else if (hasAutoTranslations) {
-      // 有自动翻译 -> 切换翻译可见性
-      this.toggleTranslationVisibility(
-        element,
-        translationTerms,
-        isTranslationHidden,
-      );
+    if (isTranslated && hasExistingContainer) {
+      const container = existingContainer as HTMLElement;
+      // 左滑切换显示/隐藏 (toggle)
+      if (container.style.display !== 'none') {
+        container.style.display = 'none';
+      } else {
+        container.style.display = 'block';
+      }
     } else {
-      // 无翻译 -> 执行翻译
-      await this.triggerTranslation(element);
+      // 未翻译 -> 执行翻译
+      await this.performTranslation(element);
     }
   }
 
   /**
-   * 切换翻译可见性（用于自动翻译的段落）
+   * 右滑处理：隐藏/关闭翻译
    */
-  private toggleTranslationVisibility(
-    element: HTMLElement,
-    translationTerms: NodeListOf<Element>,
-    isCurrentlyHidden: boolean,
-  ): void {
-    const newDisplay = isCurrentlyHidden ? '' : 'none';
-
-    translationTerms.forEach((term) => {
-      (term as HTMLElement).style.display = newDisplay;
-    });
-
-    if (isCurrentlyHidden) {
-      element.classList.remove('wxt-translations-hidden');
-      console.log('[SwipeTranslation] 已显示翻译');
-    } else {
-      element.classList.add('wxt-translations-hidden');
-      console.log('[SwipeTranslation] 已隐藏翻译');
+  private handleRightSwipe(element: HTMLElement): Promise<void> {
+    const existingContainer = element.nextElementSibling;
+    if (
+      existingContainer &&
+      existingContainer.classList.contains(this.TRANSLATION_CONTAINER_CLASS)
+    ) {
+      (existingContainer as HTMLElement).style.display = 'none';
+      console.log('[SwipeTranslation] 右滑隐藏');
     }
+    return Promise.resolve();
+  }
+
+  /**
+   * 执行翻译 (带缓存)
+   */
+  private async performTranslation(element: HTMLElement): Promise<void> {
+    const originalText = element.innerText.trim();
+    if (!originalText) return;
+
+    // 生成简单的缓存键 (使用文本内容)
+    // 简单起见，直接用文本作为键。如果文本太长，可以截取
+    const cacheKey = originalText;
+
+    // 添加视觉反馈 (半透明或加载中样式)
+    element.style.opacity = '0.6';
+    element.style.transition = 'opacity 0.3s';
+
+    try {
+      let translatedText = '';
+
+      // 1. 检查缓存
+      if (this.translationCache.has(cacheKey)) {
+        console.log('[SwipeTranslation] 命中缓存');
+        translatedText = this.translationCache.get(cacheKey)!;
+      } else {
+        // 2. 调用 Google API
+        console.log('[SwipeTranslation] 请求 Google API...');
+        const result = await fetchGoogleTranslation(originalText);
+        translatedText = result.translatedText;
+        // 写入缓存
+        this.translationCache.set(cacheKey, translatedText);
+      }
+
+      // 3. 显示翻译
+      this.showTranslation(element, translatedText);
+    } catch (error) {
+      console.error('[SwipeTranslation] 翻译失败:', error);
+      // 可以在这里添加错误提示 UI
+    } finally {
+      element.style.opacity = '1';
+    }
+  }
+
+  /**
+   * 显示翻译结果 (沉浸式：原文下方的新行)
+   */
+  private showTranslation(element: HTMLElement, translatedText: string): void {
+    // 标记已翻译
+    element.setAttribute(TRANSLATED_ATTR, 'true');
+
+    // 检查是否已有容器
+    let container = element.nextElementSibling as HTMLElement;
+    if (
+      !container ||
+      !container.classList.contains(this.TRANSLATION_CONTAINER_CLASS)
+    ) {
+      // 创建新容器
+      container = document.createElement('div');
+      container.className = this.TRANSLATION_CONTAINER_CLASS;
+
+      // 样式设置：模仿沉浸式翻译风格
+      container.style.marginTop = '6px';
+      container.style.marginBottom = '12px';
+      container.style.color = 'rgb(100, 116, 139)'; // Slate-500
+      container.style.fontWeight = '500';
+      container.style.fontSize = '0.95em';
+      container.style.lineHeight = '1.5';
+
+      // 插入到原文之后
+      if (element.parentNode) {
+        element.parentNode.insertBefore(container, element.nextSibling);
+
+        // 如果原元素是 inline 元素 (如 span)，尝试设为 block 或 inline-block 以确保换行效果
+        // 但通常 paragraphTTS 针对的是块级元素
+      }
+    }
+
+    container.innerText = translatedText;
+    container.style.display = 'block';
+  }
+
+  /**
+   * 恢复原始内容 (移除翻译行)
+   */
+  private restoreOriginal(element: HTMLElement): void {
+    const container = element.nextElementSibling;
+    if (
+      container &&
+      container.classList.contains(this.TRANSLATION_CONTAINER_CLASS)
+    ) {
+      container.remove();
+    }
+    element.removeAttribute(TRANSLATED_ATTR);
+    console.log('[SwipeTranslation] 已移除翻译');
   }
 
   /**
@@ -223,14 +314,13 @@ export class SwipeTranslationService {
     // 向上查找直到找到段落级别的元素
     while (current && current !== document.body) {
       const tagName = current.tagName.toLowerCase();
+      // 这里可以限制只针对 P 标签，或者扩充
       const isBlockElement = [
         'p',
         'div',
         'article',
         'section',
         'li',
-        'td',
-        'th',
         'blockquote',
         'h1',
         'h2',
@@ -252,52 +342,6 @@ export class SwipeTranslationService {
   }
 
   /**
-   * 触发翻译
-   */
-  private async triggerTranslation(element: HTMLElement): Promise<void> {
-    if (!this.onSwipeTranslate) return;
-
-    // 保存原始 HTML 用于恢复
-    if (!element.hasAttribute(ORIGINAL_HTML_ATTR)) {
-      element.setAttribute(ORIGINAL_HTML_ATTR, element.innerHTML);
-    }
-
-    // 添加视觉反馈
-    element.classList.add('wxt-swipe-translating');
-
-    try {
-      await this.onSwipeTranslate(element);
-      // 标记为已翻译
-      element.setAttribute(TRANSLATED_ATTR, 'true');
-      console.log('[SwipeTranslation] 翻译完成');
-    } catch (error) {
-      console.error('[SwipeTranslation] 翻译失败:', error);
-    } finally {
-      element.classList.remove('wxt-swipe-translating');
-    }
-  }
-
-  /**
-   * 恢复原始内容
-   */
-  private restoreOriginal(element: HTMLElement): void {
-    const originalHtml = element.getAttribute(ORIGINAL_HTML_ATTR);
-
-    if (originalHtml) {
-      element.innerHTML = originalHtml;
-      element.removeAttribute(TRANSLATED_ATTR);
-      console.log('[SwipeTranslation] 已恢复原始内容');
-    }
-  }
-
-  /**
-   * 检查元素是否已翻译
-   */
-  isElementTranslated(element: HTMLElement): boolean {
-    return element.hasAttribute(TRANSLATED_ATTR);
-  }
-
-  /**
    * 更新配置
    */
   updateConfig(config: Partial<SwipeConfig>): void {
@@ -309,5 +353,6 @@ export class SwipeTranslationService {
    */
   destroy(): void {
     this.disable();
+    this.translationCache.clear();
   }
 }

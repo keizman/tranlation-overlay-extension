@@ -26,8 +26,10 @@ export interface ParagraphTTSSettings {
 }
 
 // 新增：手势翻译设置
+// 新增：手势翻译设置
 export interface GestureTranslationSettings {
-  enabled: boolean;
+  leftSwipe: boolean; // 左滑翻译 (开启后包含再次左滑隐藏)
+  rightSwipe: boolean; // 右滑隐藏
 }
 
 // 用户设置主接口

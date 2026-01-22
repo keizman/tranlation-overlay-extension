@@ -579,6 +579,14 @@
   "listenSettings": {
     "title": "Listen Settings",
     "description": "Configure Text-to-Speech (TTS) and listening practice tools",
+    "paragraphTTS": {
+      "title": "Paragraph TTS",
+      "description": "Click paragraph to play audio",
+      "enable": "Enable Paragraph TTS",
+      "enableDescription": "Click on any paragraph to hear it read aloud",
+      "tipTitle": "How to use",
+      "tipContent": "Click on any paragraph in the page to play its audio. Click again to stop."
+    },
     "ttsService": {
       "title": "TTS Service",
       "description": "Full-text reading and pronunciation settings"

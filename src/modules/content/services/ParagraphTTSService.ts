@@ -44,6 +44,7 @@ export interface ParagraphTTSConfig {
    */
   totalHighlightDelay: number;
   showDebugPanel?: boolean;
+  enabled?: boolean; // 新增 enabled 字段
 }
 
 const DEFAULT_CONFIG: ParagraphTTSConfig = {
@@ -54,6 +55,7 @@ const DEFAULT_CONFIG: ParagraphTTSConfig = {
   speechRate: 1.0,
   totalHighlightDelay: 800, // 总延迟 1100ms，分配为 Web Speech 启动延迟 550ms + 高亮延迟 550ms
   showDebugPanel: false,
+  enabled: true, // 默认启用
 };
 
 // ==================== AudioContext 单例管理 ====================
@@ -282,6 +284,11 @@ export class ParagraphTTSService {
    * 点击处理 - 双击检测
    */
   private handleClick = (e: MouseEvent): void => {
+    // 检查是否启用
+    if (!this.config.enabled) {
+      return;
+    }
+
     this.clickCount++;
     log(
       `📍 Click #${this.clickCount} - target:`,

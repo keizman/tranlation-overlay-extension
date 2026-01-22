@@ -503,19 +503,20 @@ export class ContentManager implements IContentManager {
     // 初始化段落TTS服务（双击朗读 + 高亮）
     this.paragraphTTSService = new ParagraphTTSService({
       showDebugPanel: this.settings.showDebugPanel ?? false,
+      enabled: this.settings.paragraphTTS?.enabled ?? true,
     });
     this.paragraphTTSService.enable();
 
-    // 初始化滑动翻译服务（右滑翻译/恢复切换）
-    // 无论何种触发模式都启用，支持：
-    // - 无翻译段落：右滑触发翻译
-    // - 有翻译段落：右滑切换翻译显示/隐藏
+    // 初始化滑动翻译服务（左滑翻译/恢复切换）
+    // 直接使用内部逻辑 (Google API + 缓存)
     this.swipeTranslationService = new SwipeTranslationService();
-    this.swipeTranslationService.enable(async (element: HTMLElement) => {
-      // 使用processingService处理单个节点
-      await this.processingService?.processNode(element);
-    });
-    console.log('[ContentManager] 滑动翻译已启用');
+    if (
+      this.settings.gestureTranslation?.leftSwipe ||
+      this.settings.gestureTranslation?.rightSwipe
+    ) {
+      this.swipeTranslationService.enable();
+    }
+    console.log('[ContentManager] 滑动翻译服务已初始化');
 
     // 初始化全文TTS底栏
     const ttsBarManager = getFullTextTTSBarManager();
