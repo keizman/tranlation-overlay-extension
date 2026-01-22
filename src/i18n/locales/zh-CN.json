@@ -475,7 +475,17 @@
       "about": "关于",
       "aboutDescription": "版本信息和帮助",
       "tts": "TTS服务",
-      "ttsDescription": "全文朗读TTS配置"
+      "ttsDescription": "全文朗读TTS配置",
+      "read": "阅读助手",
+      "readDescription": "词典卡片和阅读辅助",
+      "extension": "扩展",
+      "extensionDescription": "翻译服务和扩展功能配置",
+      "listen": "听",
+      "listenDescription": "TTS语音朗读和听力配置",
+      "speak": "说",
+      "speakDescription": "口语练习和口语评测",
+      "write": "写",
+      "writeDescription": "写作辅助和语法检查"
     }
   },
   "tts": {
@@ -528,5 +538,68 @@
       "testSuccess": "连接成功！",
       "testFailed": "连接失败"
     }
+  },
+  "readSettings": {
+    "title": "阅读助手",
+    "description": "配置词典卡片和阅读辅助功能",
+    "wordCard": {
+      "title": "词典卡片设置",
+      "enable": "启用词典卡片",
+      "enableDescription": "选中单词时显示词典释义卡片",
+      "apiEndpoint": "词典服务地址",
+      "apiEndpointPlaceholder": "http://148.135.95.44:9001",
+      "apiEndpointHint": "词典API服务器地址，默认使用内置服务。",
+      "captureMode": "取词方式",
+      "selectCapture": "划选取词",
+      "selectCaptureHint": "选中文本后自动查词",
+      "doubleClickCapture": "双击取词",
+      "doubleClickCaptureHint": "双击单词自动查词",
+      "showIcon": "显示查词图标",
+      "showIconHint": "选中文本后显示查词图标，点击后查词",
+      "cardSettings": "卡片设置",
+      "autoSpeak": "自动发音",
+      "autoSpeakHint": "打开卡片时自动朗读单词",
+      "showEnglish": "显示英文释义",
+      "showEnglishHint": "在中文翻译下方显示英文释义"
+    }
+  },
+  "wordCardUI": {
+    "title": "词典",
+    "enZh": "英汉词典",
+    "enEn": "英英词典",
+    "detail": "详细释义",
+    "grammar": {
+      "past": "过去式",
+      "pastParticiple": "过去分词",
+      "presentParticiple": "现在分词",
+      "thirdPerson": "第三人称",
+      "plural": "复数",
+      "comparative": "比较级",
+      "superlative": "最高级"
+    }
+  },
+  "extensionSettings": {
+    "title": "扩展设置",
+    "description": "配置翻译服务和通用扩展行为",
+    "translationService": {
+      "title": "翻译服务",
+      "description": "配置API提供商和翻译策略"
+    }
+  },
+  "listenSettings": {
+    "title": "听力设置",
+    "description": "配置语音朗读(TTS)和听力练习工具",
+    "ttsService": {
+      "title": "TTS服务",
+      "description": "全文朗读和发音设置"
+    }
+  },
+  "speakSettings": {
+    "title": "口语设置",
+    "description": "口语练习和口语评测工具（即将推出）"
+  },
+  "writeSettings": {
+    "title": "写作设置",
+    "description": "写作辅助和语法检查工具（即将推出）"
   }
 }

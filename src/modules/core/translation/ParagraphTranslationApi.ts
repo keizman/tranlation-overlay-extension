@@ -5,7 +5,7 @@
  * 与单词替换API不同，这个服务使用简单的翻译prompt
  */
 
-import { callAI } from '../../api/services/UniversalApiService';
+import { callAI } from '../../extension/api/services/UniversalApiService';
 import { StorageService } from '../storage';
 import { UserSettings } from '../../shared/types/storage';
 

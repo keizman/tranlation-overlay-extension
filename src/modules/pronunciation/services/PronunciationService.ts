@@ -4,10 +4,11 @@
  */
 
 import { IPhoneticProvider, PhoneticProviderFactory } from '../phonetic';
-import { ITTSProvider, TTSProviderFactory } from '../tts';
+import { ITTSProvider, TTSProviderFactory } from '../../listen/ttsProviders';
 import { AITranslationProvider } from '../translation';
 import { TooltipRenderer } from '../ui/TooltipRenderer';
-import { PhoneticResult, TTSResult, PronunciationElementData } from '../types';
+import { PhoneticResult, PronunciationElementData } from '../types';
+import { TTSResult } from '../../listen/types';
 import {
   PronunciationConfig,
   DEFAULT_PRONUNCIATION_CONFIG,

@@ -15,7 +15,7 @@ export * from './types';
 
 // 提供者 (按功能模块导出)
 export * from './phonetic';
-export * from './tts';
+
 export * from './translation';
 
 // 工具类

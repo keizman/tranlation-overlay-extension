@@ -273,7 +273,10 @@ export class NotificationService {
   public setNotificationClickListener(
     callback: (notificationId: string) => void,
   ): void {
-    browser.notifications.onClicked.addListener(callback);
+    // Firefox Android 兼容性检查
+    if (browser.notifications?.onClicked) {
+      browser.notifications.onClicked.addListener(callback);
+    }
   }
 
   /**
@@ -293,7 +296,10 @@ export class NotificationService {
   public setNotificationCloseListener(
     callback: (notificationId: string, byUser: boolean) => void,
   ): void {
-    browser.notifications.onClosed.addListener(callback);
+    // Firefox Android 兼容性检查
+    if (browser.notifications?.onClosed) {
+      browser.notifications.onClosed.addListener(callback);
+    }
   }
 
   /**

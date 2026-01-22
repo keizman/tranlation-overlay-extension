@@ -96,13 +96,16 @@
 <script setup lang="ts">
 import {
   Settings,
-  Languages,
   Shield,
   Circle,
   Download,
   Info,
   Keyboard,
-  Volume2,
+  BookOpen,
+  Puzzle,
+  Headphones,
+  Mic,
+  PenTool,
 } from 'lucide-vue-next';
 import NavigationGroup from './NavigationGroup.vue';
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
@@ -153,19 +156,37 @@ const basicFeatures = computed<NavigationItem[]>(() => [
   },
 ]);
 
-// 高级功能组
+// 高级功能组 (按常用度排序: Extension → Read → Listen → Speak → Write)
 const advancedFeatures = computed<NavigationItem[]>(() => [
   {
-    key: 'translation',
-    label: t('options.navigation.translation'),
-    icon: Languages,
-    description: t('options.navigation.translationDescription'),
+    key: 'extension',
+    label: t('options.navigation.extension'),
+    icon: Puzzle,
+    description: t('options.navigation.extensionDescription'),
   },
   {
-    key: 'tts',
-    label: t('options.navigation.tts'),
-    icon: Volume2,
-    description: t('options.navigation.ttsDescription'),
+    key: 'read',
+    label: t('options.navigation.read'),
+    icon: BookOpen,
+    description: t('options.navigation.readDescription'),
+  },
+  {
+    key: 'listen',
+    label: t('options.navigation.listen'),
+    icon: Headphones,
+    description: t('options.navigation.listenDescription'),
+  },
+  {
+    key: 'speak',
+    label: t('options.navigation.speak'),
+    icon: Mic,
+    description: t('options.navigation.speakDescription'),
+  },
+  {
+    key: 'write',
+    label: t('options.navigation.write'),
+    icon: PenTool,
+    description: t('options.navigation.writeDescription'),
   },
 ]);
 

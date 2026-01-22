@@ -474,7 +474,17 @@
       "about": "About",
       "aboutDescription": "Version information and help",
       "tts": "TTS Service",
-      "ttsDescription": "Full-text TTS reading configuration"
+      "ttsDescription": "Full-text TTS reading configuration",
+      "read": "Reading Helper",
+      "readDescription": "Word card and reading assistance",
+      "extension": "Extension",
+      "extensionDescription": "Translation services and extension configuration",
+      "listen": "Listen",
+      "listenDescription": "TTS and listening settings",
+      "speak": "Speak",
+      "speakDescription": "Speaking practice and evaluation",
+      "write": "Write",
+      "writeDescription": "Writing assistance and grammar check"
     }
   },
   "tts": {
@@ -527,5 +537,59 @@
       "testSuccess": "Connection successful!",
       "testFailed": "Connection failed"
     }
+  },
+  "readSettings": {
+    "title": "Reading Helper",
+    "description": "Configure word card and reading assistance",
+    "wordCard": {
+      "title": "Word Card Settings",
+      "enable": "Enable Word Card",
+      "enableDescription": "Show dictionary card when selecting words",
+      "selectCapture": "Select text to capture",
+      "doubleClickCapture": "Double click to capture",
+      "autoSpeak": "Auto Pronunciation",
+      "autoSpeakHint": "Automatically play pronunciation when opening card",
+      "showEnglish": "Show English Definition",
+      "showEnglishHint": "Show English definition below the translation"
+    }
+  },
+  "wordCardUI": {
+    "title": "Dictionary",
+    "enZh": "English-Chinese Dictionary",
+    "enEn": "English-English Dictionary",
+    "detail": "Detailed Definition",
+    "grammar": {
+      "past": "Past",
+      "pastParticiple": "Past Participle",
+      "presentParticiple": "Present Participle",
+      "thirdPerson": "Third Person",
+      "plural": "Plural",
+      "comparative": "Comparative",
+      "superlative": "Superlative"
+    }
+  },
+  "extensionSettings": {
+    "title": "Extension Settings",
+    "description": "Configure translation services and general extension behavior",
+    "translationService": {
+      "title": "Translation Service",
+      "description": "Configure API providers and translation strategies"
+    }
+  },
+  "listenSettings": {
+    "title": "Listen Settings",
+    "description": "Configure Text-to-Speech (TTS) and listening practice tools",
+    "ttsService": {
+      "title": "TTS Service",
+      "description": "Full-text reading and pronunciation settings"
+    }
+  },
+  "speakSettings": {
+    "title": "Speak Settings",
+    "description": "Speaking practice and evaluation tools (Coming Soon)"
+  },
+  "writeSettings": {
+    "title": "Write Settings",
+    "description": "Writing assistance and grammar check (Coming Soon)"
   }
 }

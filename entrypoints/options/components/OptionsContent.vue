@@ -31,6 +31,11 @@ import DataManagement from './data/DataManagement.vue';
 import About from './about/About.vue';
 import HotkeySettings from './basic/HotkeySettings.vue';
 import TTSSettings from './tts/TTSSettings.vue';
+import ReadSettings from './read/ReadSettings.vue';
+import ExtensionSettings from './extension/ExtensionSettings.vue';
+import ListenSettings from './listen/ListenSettings.vue';
+import SpeakSettings from './speak/SpeakSettings.vue';
+import WriteSettings from './write/WriteSettings.vue';
 
 interface Props {
   currentSection: string;
@@ -43,7 +48,7 @@ const emit = defineEmits<{
   saveMessage: [message: string];
 }>();
 
-// 组件映射
+// 组件映射 (按新的五模块架构)
 const componentMap: Record<string, any> = {
   basic: BasicSettings,
   translation: TranslationSettings,
@@ -53,6 +58,12 @@ const componentMap: Record<string, any> = {
   about: About,
   data: DataManagement,
   tts: TTSSettings,
+  read: ReadSettings,
+  // 新增五模块
+  extension: ExtensionSettings,
+  listen: ListenSettings,
+  speak: SpeakSettings,
+  write: WriteSettings,
 };
 
 const currentComponent = computed(() => {

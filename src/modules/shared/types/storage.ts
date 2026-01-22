@@ -67,6 +67,28 @@ export interface UserSettings {
   fullTextTTSConfigs: import('./fullTextTTS').FullTextTTSConfigItem[]; // TTS配置列表
   activeFullTextTTSConfigId: string; // 当前激活的配置ID
   fullTextTTSVoiceName: string; // TTS 语音模型名称
+  // 新增：词典卡片设置
+  wordCard: WordCardSettings;
+}
+
+// 词典卡片设置接口
+export interface WordCardSettings {
+  /** 总开关 */
+  enabled: boolean;
+  /** 后端 API 地址 */
+  apiEndpoint: string;
+  /** 划选取词 */
+  selectCaptureMode: boolean;
+  /** 双击取词 */
+  dbClickCaptureMode: boolean;
+  /** 单击取词 */
+  singleClickCaptureMode: boolean;
+  /** 显示查词图标 */
+  showExplainIcon: boolean;
+  /** 自动发音 */
+  autoSpeak: boolean;
+  /** 显示英文释义 */
+  showEnglishDefinition: boolean;
 }
 
 // 右键菜单消息接口

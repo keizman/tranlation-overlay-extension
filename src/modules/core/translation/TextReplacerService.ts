@@ -3,7 +3,7 @@
  * 负责根据用户设置替换文本中的词汇，支持智能模式和传统模式
  */
 
-import { ApiServiceFactory } from '../../api';
+import { ApiServiceFactory } from '../../extension/api';
 import { StyleManager } from '../../styles';
 import { StorageService } from '../storage';
 

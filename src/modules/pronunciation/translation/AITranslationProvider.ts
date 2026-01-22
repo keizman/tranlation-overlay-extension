@@ -28,7 +28,7 @@ import {
 import { ApiConfig } from '../../shared/types/api';
 import { API_CONSTANTS } from '../config';
 import { cleanMarkdownFromResponse } from '@/src/utils';
-import { UniversalApiService } from '../../api/services/UniversalApiService';
+import { UniversalApiService } from '../../extension/api/services/UniversalApiService';
 
 export class AITranslationProvider implements IPhoneticProvider {
   /** 提供者名称标识 */

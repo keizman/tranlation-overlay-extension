@@ -4,7 +4,7 @@
  */
 
 import { TTSConfig } from '../config';
-import { TTSResult } from '../types';
+import { TTSResult } from '../../listen/types';
 
 export class TTSService {
   private config: TTSConfig;

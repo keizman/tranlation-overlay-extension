@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { UserSettings, TriggerMode } from '@/src/modules/shared/types';
+import { initializeLocale } from '@/src/i18n';
 import { TranslationMode } from '@/src/modules/shared/types/core';
 import { StyleManager } from '@/src/modules/styles';
 import { TextProcessorService } from '@/src/modules/core/translation/TextProcessorService';
@@ -26,7 +27,11 @@ import {
 import {
   getFullTextTTSBarManager,
   destroyFullTextTTSBarManager,
-} from '../floatingBar';
+} from '../listen/floatingBar';
+import { WordCardManager } from '../read/wordCard';
+import { createModuleLogger } from '../shared/utils/Report';
+
+const logger = createModuleLogger('ContentManager');
 
 /**
  * 翻译显示状态管理器
@@ -244,6 +249,7 @@ export class ContentManager implements IContentManager {
   // 新增：最终确定的翻译目标语言
   private finalTargetLanguage?: string;
   private paragraphService = ParagraphTranslationService.getInstance();
+  private wordCardManager?: WordCardManager;
   constructor() {
     this.configurationService = new ConfigurationService();
   }
@@ -259,6 +265,9 @@ export class ContentManager implements IContentManager {
         console.log('[ContentManager] 网站在黑名单中，跳过初始化');
         return;
       }
+
+      // 初始化语言设置
+      initializeLocale();
 
       // 验证配置
       await this.validateConfiguration();
@@ -302,6 +311,7 @@ export class ContentManager implements IContentManager {
       this.services?.lazyLoadingService?.destroy();
       this.paragraphTTSService?.destroy();
       this.swipeTranslationService?.destroy();
+      this.wordCardManager?.destroy();
       destroySPANavigationDetector();
       destroyFullTextTTSBarManager();
       console.log('[ContentManager] 服务已销毁');
@@ -326,6 +336,24 @@ export class ContentManager implements IContentManager {
         this.services.styleManager,
         this.services.textReplacer,
       );
+    }
+
+    // 更新词典卡片设置
+    if (this.wordCardManager && newSettings.wordCard) {
+      logger.log('Updating WordCard settings', newSettings.wordCard);
+      this.wordCardManager.updateSettings(newSettings.wordCard);
+    } else if (newSettings.wordCard) {
+      logger.log(
+        'WordCard enabled in settings update, initializing',
+        newSettings.wordCard,
+      );
+      this.wordCardManager = WordCardManager.getInstance();
+      this.wordCardManager.init(newSettings.wordCard);
+    } else {
+      logger.log('WordCard settings missing or manager missing', {
+        hasManager: !!this.wordCardManager,
+        hasSettings: !!newSettings.wordCard,
+      });
     }
   }
 
@@ -492,6 +520,15 @@ export class ContentManager implements IContentManager {
     // 初始化全文TTS底栏
     const ttsBarManager = getFullTextTTSBarManager();
     await ttsBarManager.init(optimizedSettings);
+
+    // 初始化词典卡片管理器
+    if (this.settings.wordCard) {
+      this.wordCardManager = WordCardManager.getInstance();
+      this.wordCardManager.init(this.settings.wordCard);
+      logger.log('WordCard initialized', this.settings.wordCard);
+    } else {
+      logger.log('WordCard settings missing in init');
+    }
   }
 
   /**

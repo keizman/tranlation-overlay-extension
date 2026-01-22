@@ -65,6 +65,18 @@ export const DEFAULT_LAZY_LOADING_CONFIG: LazyLoadingConfig = {
   preloadDistance: 1, // 固定提前半屏预加载- 改为 1
 };
 
+// 默认词典卡片配置
+export const DEFAULT_WORD_CARD_CONFIG = {
+  enabled: true, // 默认开启
+  apiEndpoint: 'http://148.135.95.44:9001',
+  selectCaptureMode: false, // 默认开启划选
+  dbClickCaptureMode: false, // 默认开启双击
+  singleClickCaptureMode: false,
+  showExplainIcon: false, // 默认不显示图标，直接显示卡片
+  autoSpeak: true, // 默认自动朗读
+  showEnglishDefinition: true, // 默认显示英文释义
+};
+
 // 创建默认API配置项的函数
 function createDefaultApiConfigItem(): ApiConfigItem {
   return {
@@ -128,4 +140,6 @@ export const DEFAULT_SETTINGS: UserSettings = {
   activeFullTextTTSConfigId: 'default-tts-config',
   //fullTextTTSVoiceName: 'en-US-Standard-H', // 默认语音模型
   fullTextTTSVoiceName: 'en-US-Chirp3-HD-Erinome', // 默认语音模型
+  // 词典卡片设置
+  wordCard: DEFAULT_WORD_CARD_CONFIG,
 };

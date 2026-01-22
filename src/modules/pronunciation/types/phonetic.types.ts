@@ -114,3 +114,8 @@ export interface AITranslationResult {
   /** 是否来自缓存 */
   cached?: boolean;
 }
+
+/**
+ * TTS提供者类型
+ */
+export type TTSProviderType = 'browser' | 'google' | 'azure' | 'openai';

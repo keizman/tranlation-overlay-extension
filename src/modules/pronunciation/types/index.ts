@@ -4,7 +4,7 @@
 
 // 导出所有类型
 export * from './phonetic.types';
-export * from './tts.types';
+
 export * from './ui.types';
 
 // 便捷导入 - 音标相关
@@ -16,14 +16,6 @@ export type {
   PhoneticResult,
   CacheEntry,
 } from './phonetic.types';
-
-// 便捷导入 - TTS相关
-export type {
-  TTSResult,
-  TTSProviderType,
-  TTSProviderStatus,
-  TTSServiceStatus,
-} from './tts.types';
 
 // 便捷导入 - UI相关
 export type {
