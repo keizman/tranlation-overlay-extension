@@ -29,7 +29,14 @@ export default defineConfig({
       },
     },
     // contextMenus not supported on Firefox Android, use only common permissions
-    permissions: ['storage', 'notifications', 'activeTab', 'webNavigation'],
+    permissions: [
+      'storage',
+      'notifications',
+      'activeTab',
+      'webNavigation',
+      'alarms',
+      'idle',
+    ],
     host_permissions: ['<all_urls>', 'https://api.github.com/*'],
     // commands not fully supported on Firefox Android, but kept for desktop
     commands: {

@@ -14,6 +14,7 @@ import {
   BACKGROUND_CONSTANTS,
 } from '@/src/modules/background/types';
 import { MessageType } from '@/src/modules/core/messaging/types';
+import { authManager } from '@/src/modules/auth';
 
 export default defineBackground(() => {
   // 服务实例
@@ -31,6 +32,9 @@ export default defineBackground(() => {
    */
   async function initializeServices(): Promise<void> {
     try {
+      // 初始化认证服务
+      await authManager.init();
+
       // 初始化命令服务
       commandService.initialize();
 
@@ -62,8 +66,28 @@ export default defineBackground(() => {
       } else {
         console.error('[Background] 安装处理失败:', result.errors);
       }
+
+      await authManager.checkAndRefreshIfNeeded();
     } catch (error) {
       console.error('[Background] 安装处理异常:', error);
+    }
+  });
+
+  browser.runtime.onStartup.addListener(async () => {
+    console.log('[Background] 浏览器启动');
+    await authManager.checkAndRefreshIfNeeded();
+  });
+
+  chrome.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm.name === 'tokenCheck') {
+      await authManager.handleAlarm();
+    }
+  });
+
+  chrome.idle.onStateChanged.addListener(async (newState) => {
+    if (newState === 'active') {
+      console.log('[Background] 用户返回活动状态');
+      await authManager.checkAndRefreshIfNeeded();
     }
   });
 
@@ -105,6 +129,22 @@ export default defineBackground(() => {
       case 'GET_UPDATE_INFO':
         handleUpdateMessage(message, sendResponse);
         return true; // 保持消息通道开放
+
+      case 'GET_TOKEN':
+        handleGetToken(sendResponse);
+        return true;
+
+      case 'LOGIN_SUCCESS':
+        handleLoginSuccess(message, sendResponse);
+        return true;
+
+      case 'LOGOUT':
+        handleLogout(sendResponse);
+        return true;
+
+      case 'GET_AUTH_STATE':
+        handleGetAuthState(sendResponse);
+        return true;
 
       default:
         console.warn(`[Background] 未知消息类型: ${message.type}`);
@@ -266,6 +306,65 @@ export default defineBackground(() => {
           error: {
             message: error instanceof Error ? error.message : '未知错误',
           },
+        });
+      }
+    })();
+  }
+
+  function handleGetToken(sendResponse: (response: any) => void): void {
+    (async () => {
+      try {
+        await authManager.init();
+        const token = await authManager.getValidToken();
+        sendResponse({ token });
+      } catch (error) {
+        sendResponse({
+          error: error instanceof Error ? error.message : '未知错误',
+        });
+      }
+    })();
+  }
+
+  function handleLoginSuccess(
+    message: any,
+    sendResponse: (response: any) => void,
+  ): void {
+    (async () => {
+      try {
+        await authManager.onLoginSuccess(message.userId);
+        sendResponse({ success: true });
+      } catch (error) {
+        sendResponse({
+          success: false,
+          error: error instanceof Error ? error.message : '未知错误',
+        });
+      }
+    })();
+  }
+
+  function handleLogout(sendResponse: (response: any) => void): void {
+    (async () => {
+      try {
+        await authManager.onLogout();
+        sendResponse({ success: true });
+      } catch (error) {
+        sendResponse({
+          success: false,
+          error: error instanceof Error ? error.message : '未知错误',
+        });
+      }
+    })();
+  }
+
+  function handleGetAuthState(sendResponse: (response: any) => void): void {
+    (async () => {
+      try {
+        await authManager.init();
+        const authState = await chrome.storage.local.get('authState');
+        sendResponse({ state: authState.authState || null });
+      } catch (error) {
+        sendResponse({
+          error: error instanceof Error ? error.message : '未知错误',
         });
       }
     })();
