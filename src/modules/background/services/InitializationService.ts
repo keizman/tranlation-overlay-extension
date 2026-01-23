@@ -14,6 +14,7 @@ export class InitializationService {
   private storageService: StorageService;
   private contextMenuManager: ContextMenuManager;
   private websiteManager: WebsiteManager;
+  private runtimeInitialized: boolean = false;
 
   private constructor() {
     this.storageService = StorageService.getInstance();
@@ -32,7 +33,28 @@ export class InitializationService {
   }
 
   /**
-   * 处理扩展安装事件
+   * 初始化运行时事件监听器 (每次 Service Worker 启动都需要调用)
+   * Chrome MV3 的 Service Worker 是短暂的，休眠后会丢失事件监听器
+   * 因此需要在每次启动时重新注册
+   */
+  public async initializeRuntime(): Promise<void> {
+    if (this.runtimeInitialized) {
+      console.log('[InitializationService] 运行时已初始化，跳过');
+      return;
+    }
+
+    try {
+      // 注册事件监听器 (这些在 SW 每次唤醒时都需要)
+      await this.contextMenuManager.init();
+      this.runtimeInitialized = true;
+      console.log('[InitializationService] 运行时事件监听器初始化完成');
+    } catch (error) {
+      console.error('[InitializationService] 运行时初始化失败:', error);
+    }
+  }
+
+  /**
+   * 处理扩展安装事件 (仅在安装/更新时调用)
    */
   public async handleInstallation(
     details: chrome.runtime.InstalledDetails,
@@ -48,8 +70,8 @@ export class InitializationService {
         await this.performFirstTimeSetup(result);
       }
 
+      // 创建菜单结构 (仅在安装/更新时需要)
       await this.initializeMenus(result);
-      await this.initializeContextMenu(result);
     } catch (error) {
       result.success = false;
       result.errors.push(
@@ -90,20 +112,6 @@ export class InitializationService {
       console.log('右键菜单初始化完成');
     } catch (error) {
       result.errors.push('右键菜单初始化失败' + error);
-    }
-  }
-
-  /**
-   * 初始化菜单管理器
-   */
-  private async initializeContextMenu(
-    result: InitializationResult,
-  ): Promise<void> {
-    try {
-      await this.contextMenuManager.init();
-      console.log('菜单管理器初始化完成');
-    } catch (error) {
-      result.errors.push('菜单管理器初始化失败' + error);
     }
   }
 

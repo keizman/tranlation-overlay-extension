@@ -37,6 +37,10 @@ export default defineBackground(() => {
       // 初始化更新检查服务
       await updateCheckService.init();
 
+      // 初始化运行时事件监听器 (Chrome MV3 Service Worker 每次唤醒都需要)
+      // 这确保 contextMenus.onClicked 等事件在 SW 休眠后重新注册
+      await initializationService.initializeRuntime();
+
       console.log('[Background] 所有服务初始化完成');
     } catch (error) {
       console.error('[Background] 服务初始化失败:', error);
