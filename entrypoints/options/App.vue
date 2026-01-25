@@ -21,6 +21,27 @@
             </h1>
           </div>
           <div class="flex items-center space-x-4">
+            <!-- User Profile or Login Button -->
+            <UserProfile v-if="isLoggedIn" />
+            <div v-else class="flex items-center gap-2">
+              <LoginDialog v-model:open="showLoginDialog">
+                <button
+                  class="flex items-center gap-2 p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
+                >
+                  <Avatar fallback="未登录" size="sm" />
+                </button>
+              </LoginDialog>
+              <RegisterDialog
+                v-model:open="showRegisterDialog"
+                @success="handleRegisterSuccess"
+              >
+                <button
+                  class="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  注册
+                </button>
+              </RegisterDialog>
+            </div>
             <!-- 保存状态指示器 -->
             <div
               v-if="saveMessage"
@@ -63,8 +84,21 @@ import { useI18n } from 'vue-i18n';
 import { Sun, Moon } from 'lucide-vue-next';
 import OptionsNavigation from './components/OptionsNavigation.vue';
 import OptionsContent from './components/OptionsContent.vue';
+import { Avatar } from '@/components/ui/avatar';
+import UserProfile from './components/auth/UserProfile.vue';
+import LoginDialog from './components/auth/LoginDialog.vue';
+import RegisterDialog from './components/auth/RegisterDialog.vue';
+import { useAuth } from '@/src/composables/useAuth';
 
 const { t } = useI18n();
+const { isLoggedIn } = useAuth();
+
+const showLoginDialog = ref(false);
+const showRegisterDialog = ref(false);
+
+const handleRegisterSuccess = () => {
+  showLoginDialog.value = true;
+};
 
 // 当前选中的设置模块
 const currentSection = ref('basic');
