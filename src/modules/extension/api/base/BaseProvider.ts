@@ -5,7 +5,7 @@
 import { ApiConfig, FullTextAnalysisResponse } from '../../../shared/types/api';
 import { UserSettings } from '../../../shared/types/storage';
 import { ITranslationProvider } from '../types';
-import { validateInputs, createErrorResponse } from '../utils/apiUtils';
+import { validateInputs } from '../utils/apiUtils';
 
 /**
  * 基础Provider抽象类
@@ -29,14 +29,17 @@ export abstract class BaseProvider implements ITranslationProvider {
 
     // 验证输入
     if (!validateInputs(originalText, this.config.apiKey)) {
-      return createErrorResponse(originalText);
+      throw new Error('API配置无效或输入文本为空');
     }
 
     try {
       return await this.doAnalyzeFullText(originalText, settings);
     } catch (error: any) {
       console.error(`${this.getProviderName()} API请求失败:`, error);
-      return createErrorResponse(originalText);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(String(error));
     }
   }
 

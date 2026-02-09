@@ -29,6 +29,7 @@ export class ParagraphTranslationService {
   private isActive: boolean = false;
   private translatedElements = new WeakSet<HTMLElement>();
   private translatingElements = new WeakSet<HTMLElement>(); // 正在翻译的元素
+  private lastTranslationError: Error | null = null;
 
   // 并发配置
   private readonly BATCH_SIZE = 5; // 每批处理5个元素
@@ -88,6 +89,7 @@ export class ParagraphTranslationService {
     }
 
     this.isActive = true;
+    this.lastTranslationError = null;
 
     // 获取用户设置
     const settings = await this.storageService.getUserSettings();
@@ -511,6 +513,8 @@ export class ParagraphTranslationService {
       this.removeLoadingIndicator(element);
       this.translatingElements.delete(element);
 
+      this.lastTranslationError =
+        error instanceof Error ? error : new Error(String(error));
       console.error('[段落翻译] 翻译失败:', error, '元素:', element.tagName);
       return false;
     }
@@ -676,6 +680,13 @@ export class ParagraphTranslationService {
 
     // 翻译段落元素
     const result = await this.translateElements(paragraphElements);
+    if (
+      result === 0 &&
+      paragraphElements.length > 0 &&
+      this.lastTranslationError
+    ) {
+      throw this.lastTranslationError;
+    }
     console.log('[段落翻译] 翻译完成，结果:', result);
     return result;
   }

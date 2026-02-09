@@ -5,6 +5,9 @@ import { LazyLoadingService } from './LazyLoadingService';
 import { IProcessingService, ProcessingParams } from '../types';
 import { ContentSegment } from '../../processing/ProcessingStateManager';
 import { ProcessingCoordinator } from '../../processing/ProcessingCoordinator';
+import { createModuleLogger } from '../../shared/utils/Report';
+
+const logger = createModuleLogger('ProcessingService');
 
 /**
  * 页面处理服务
@@ -46,7 +49,10 @@ export class ProcessingService implements IProcessingService {
         await this.processPageImmediate();
       }
     } catch (error) {
-      console.error('[ProcessingService] 页面处理失败:', error);
+      logger.error('Page processing failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     }
   }
 
@@ -107,7 +113,9 @@ export class ProcessingService implements IProcessingService {
     try {
       await this.processBatchSegments(segments);
     } catch (error) {
-      console.error('[ProcessingService] 懒加载段落处理失败:', error);
+      logger.error('Lazy-loading segment processing failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     }
   }

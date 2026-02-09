@@ -31,6 +31,7 @@ import {
 import { WordCardManager } from '../read/wordCard';
 import { createModuleLogger } from '../shared/utils/Report';
 import { DEFAULT_FLOATING_BALL_CONFIG } from '../shared/constants/defaults';
+import { UserFeedbackService } from './services/UserFeedbackService';
 
 const logger = createModuleLogger('ContentManager');
 
@@ -251,8 +252,10 @@ export class ContentManager implements IContentManager {
   private finalTargetLanguage?: string;
   private paragraphService = ParagraphTranslationService.getInstance();
   private wordCardManager?: WordCardManager;
+  private userFeedback: UserFeedbackService;
   constructor() {
     this.configurationService = new ConfigurationService();
+    this.userFeedback = UserFeedbackService.getInstance();
   }
 
   /**
@@ -663,6 +666,10 @@ export class ContentManager implements IContentManager {
         try {
           await this.translationStateManager.toggleTranslationState();
         } catch (error) {
+          this.userFeedback.showActionError(
+            'floating-ball-toggle-translation',
+            error,
+          );
           logger.error('Toggle translation state failed from floating ball', {
             error: error instanceof Error ? error.message : String(error),
           });

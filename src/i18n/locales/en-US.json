@@ -31,7 +31,13 @@
     "notifyConfigChangeFailed": "Failed to notify configuration change",
     "saveSettingsFailed": "Failed to save settings",
     "getHotkeyFailed": "Failed to get current hotkey",
-    "checkHotkeyFailed": "Failed to check hotkey status"
+    "checkHotkeyFailed": "Failed to check hotkey status",
+    "actionFeedback": {
+      "network": "Network error. Please check your connection and try again.",
+      "business": "Service request failed. Please try again later.",
+      "businessWithStatus": "Service error (HTTP {statusCode}). Please try again later.",
+      "system": "System error. Please refresh the page and try again."
+    }
   },
   "settings": {
     "selectLanguageFirst": "Please select a language first",

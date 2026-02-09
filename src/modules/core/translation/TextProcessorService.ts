@@ -264,7 +264,7 @@ export class TextProcessorService {
       }
 
       // 使用处理协调器进行统一处理
-      await this.processingCoordinator.processSegments(
+      const result = await this.processingCoordinator.processSegments(
         segments,
         textReplacer,
         originalWordDisplayMode,
@@ -272,9 +272,13 @@ export class TextProcessorService {
         showParentheses,
         false, // isLazyLoading
       );
+
+      if (!result.success && result.segmentCount === 0) {
+        throw new Error(result.error || '文本处理失败，未生成可用翻译结果');
+      }
     } catch (error) {
       console.warn('文本处理过程中发生错误:', error);
-      // 静默处理错误，确保不影响页面正常运行
+      throw error;
     }
   }
 

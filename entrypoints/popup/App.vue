@@ -168,12 +168,16 @@ const handleTranslate = async () => {
       currentWindow: true,
     });
     if (tabs[0]?.id) {
-      await browser.tabs.sendMessage(tabs[0].id, {
+      const response = await browser.tabs.sendMessage(tabs[0].id, {
         type: 'translate-page-command',
       });
+      if (response && response.success === false) {
+        showSavedMessage(response.error || t('errors.manualTranslateFailed'));
+      }
     }
   } catch (error) {
     console.error(t('errors.manualTranslateFailed'), error);
+    showSavedMessage(t('errors.manualTranslateFailed'));
   }
 };
 

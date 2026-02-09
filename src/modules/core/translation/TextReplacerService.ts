@@ -140,7 +140,7 @@ export class TextReplacerService {
       return await this.processTranslation(text, settingsForApi);
     } catch (error) {
       console.error('文本替换失败:', error);
-      return this.createEmptyResult(text);
+      throw error;
     }
   }
 
@@ -312,7 +312,7 @@ export class TextReplacerService {
       return apiResult;
     } catch (error) {
       console.error('翻译失败:', error);
-      return await this.handleTranslationError(text, settings, error);
+      throw this.normalizeTranslationError(error);
     }
   }
 
@@ -339,18 +339,11 @@ export class TextReplacerService {
     return await translationProvider.analyzeFullText(text, settings);
   }
 
-  /**
-   * 处理翻译错误 - 简化版本
-   */
-  private async handleTranslationError(
-    text: string,
-    settings: UserSettings,
-    error: any,
-  ): Promise<FullTextAnalysisResponse> {
-    console.log('翻译失败，返回原文:', error);
-
-    // 简化后不再有降级逻辑，直接返回原文
-    return this.createEmptyResult(text);
+  private normalizeTranslationError(error: unknown): Error {
+    if (error instanceof Error) {
+      return error;
+    }
+    return new Error(String(error));
   }
 
   /**

@@ -10,6 +10,7 @@ import { isProcessingResultNode, isDescendant } from '../utils/domUtils';
 import { TranslationStateManager } from '../ContentManager';
 import { createModuleLogger } from '../../shared/utils/Report';
 import { DEFAULT_FLOATING_BALL_CONFIG } from '../../shared/constants/defaults';
+import { UserFeedbackService } from './UserFeedbackService';
 
 const logger = createModuleLogger('ListenerService');
 
@@ -25,6 +26,7 @@ export class ListenerService implements IListenerService {
   private paragraphService: ParagraphTranslationService;
   private floatingBallManager: FloatingBallManager;
   private translationStateManager: TranslationStateManager;
+  private userFeedback: UserFeedbackService;
   private onSettingsUpdated?: (settings: UserSettings) => void;
   private domObserver?: MutationObserver;
   private debounceTimer?: number;
@@ -47,6 +49,7 @@ export class ListenerService implements IListenerService {
     this.paragraphService = ParagraphTranslationService.getInstance();
     this.floatingBallManager = floatingBallManager;
     this.translationStateManager = translationStateManager;
+    this.userFeedback = UserFeedbackService.getInstance();
     this.onSettingsUpdated = onSettingsUpdated;
   }
 
@@ -54,13 +57,9 @@ export class ListenerService implements IListenerService {
    * 设置消息监听器
    */
   setupMessageListeners(): void {
-    browser.runtime.onMessage.addListener(async (message) => {
-      try {
-        await this.handleMessage(message);
-      } catch (error) {
-        console.error('[ListenerService] 消息处理失败:', error);
-      }
-    });
+    browser.runtime.onMessage.addListener((message) =>
+      this.handleMessage(message),
+    );
   }
 
   /**
@@ -90,15 +89,17 @@ export class ListenerService implements IListenerService {
   /**
    * 处理消息
    */
-  private async handleMessage(message: any): Promise<void> {
+  private async handleMessage(message: any): Promise<any> {
     if (
       message.type === 'settings_updated' ||
       message.type === 'api_config_updated'
     ) {
       await this.handleSettingsUpdate(message.settings);
+      return { success: true };
     } else if (message.type === 'translate-page-command') {
-      // 改为状态切换而非直接翻译
-      await this.toggleTranslationState();
+      return this.executeUserAction('translate-page-command', () =>
+        this.toggleTranslationState(),
+      );
     } else if (message.type === 'MANUAL_TRANSLATE') {
       if (this.settings.triggerMode === TriggerMode.MANUAL) {
         const isConfigValid = await this.validateConfigForUserAction();
@@ -107,14 +108,11 @@ export class ListenerService implements IListenerService {
             'Manual translate config check failed, continuing for guest/manual mode',
           );
         }
-        try {
+        return this.executeUserAction('manual-translate', async () => {
           await this.processingService.processPage();
-        } catch (error) {
-          logger.error('Manual translate failed', {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
+        });
       }
+      return { success: true };
     } else if (message.type === 'PARAGRAPH_TRANSLATE') {
       const isConfigValid = await this.validateConfigForUserAction();
       if (!isConfigValid) {
@@ -122,14 +120,12 @@ export class ListenerService implements IListenerService {
           'Paragraph translate config check failed, continuing for guest/manual mode',
         );
       }
-      try {
+      return this.executeUserAction('paragraph-translate', async () => {
         await this.paragraphService.start();
-      } catch (error) {
-        logger.error('Paragraph translate failed', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+      });
     }
+
+    return undefined;
   }
 
   /**
@@ -143,12 +139,26 @@ export class ListenerService implements IListenerService {
       );
     }
 
+    await this.translationStateManager.toggleTranslationState();
+  }
+
+  private async executeUserAction(
+    action: string,
+    handler: () => Promise<void>,
+  ): Promise<{ success: boolean; error?: string }> {
     try {
-      await this.translationStateManager.toggleTranslationState();
+      await handler();
+      return { success: true };
     } catch (error) {
-      logger.error('Toggle translation state failed', {
+      const userMessage = this.userFeedback.showActionError(action, error);
+      logger.error('User action execution failed', {
+        action,
         error: error instanceof Error ? error.message : String(error),
       });
+      return {
+        success: false,
+        error: userMessage,
+      };
     }
   }
 

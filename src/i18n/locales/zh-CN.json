@@ -31,7 +31,13 @@
     "notifyConfigChangeFailed": "通知配置更改失败",
     "saveSettingsFailed": "保存设置失败",
     "getHotkeyFailed": "获取当前快捷键失败",
-    "checkHotkeyFailed": "检查快捷键状态失败"
+    "checkHotkeyFailed": "检查快捷键状态失败",
+    "actionFeedback": {
+      "network": "网络异常，请检查连接后重试",
+      "business": "服务处理失败，请稍后重试",
+      "businessWithStatus": "服务异常 (HTTP {statusCode})，请稍后重试",
+      "system": "系统错误，请刷新页面后重试"
+    }
   },
   "settings": {
     "selectLanguageFirst": "请先选择语言",
