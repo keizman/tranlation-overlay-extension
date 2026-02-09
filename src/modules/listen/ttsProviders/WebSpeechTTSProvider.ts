@@ -1,8 +1,9 @@
 /**
  * Web Speech API TTS提供者
- * 封装浏览器原生的语音合成功能
+ * 通过 architecture 的 SpeakingService 统一调用平台能力
  */
 
+import { speakingService } from '../../architecture/bootstrap/defaultAdapters';
 import { ITTSProvider, TTSProviderConfig } from './ITTSProvider';
 import { TTSResult } from '../types';
 
@@ -10,10 +11,8 @@ export class WebSpeechTTSProvider implements ITTSProvider {
   readonly name = 'web-speech';
 
   private config: TTSProviderConfig;
-  private synthesis: SpeechSynthesis;
   private voices: SpeechSynthesisVoice[] = [];
   private isInitialized = false;
-  private currentUtterance: SpeechSynthesisUtterance | null = null;
 
   constructor(config: TTSProviderConfig = {}) {
     this.config = {
@@ -23,47 +22,27 @@ export class WebSpeechTTSProvider implements ITTSProvider {
       volume: 1.0,
       ...config,
     };
-    this.synthesis = window.speechSynthesis;
-    this.initialize();
+    void this.initialize();
   }
 
-  /**
-   * 初始化TTS服务
-   */
   private async initialize(): Promise<void> {
     if (this.isInitialized) return;
-
-    // 等待语音列表加载
     await this.loadVoices();
     this.isInitialized = true;
   }
 
-  /**
-   * 加载可用的语音
-   */
-  private loadVoices(): Promise<void> {
-    return new Promise((resolve) => {
-      const loadVoicesHandler = () => {
-        this.voices = this.synthesis.getVoices();
-        if (this.voices.length > 0) {
-          resolve();
-        }
-      };
-
-      // 有些浏览器需要异步加载语音
-      if (this.synthesis.getVoices().length > 0) {
-        loadVoicesHandler();
-      } else {
-        this.synthesis.onvoiceschanged = loadVoicesHandler;
-        // 设置超时防止无限等待
-        setTimeout(() => {
-          if (this.voices.length === 0) {
-            this.voices = this.synthesis.getVoices();
-          }
-          resolve();
-        }, 1000);
-      }
-    });
+  private async loadVoices(): Promise<void> {
+    const voices = await speakingService.getVoices();
+    this.voices = voices.map(
+      (voice) =>
+        ({
+          voiceURI: voice.id,
+          name: voice.name,
+          lang: voice.lang,
+          localService: voice.localService,
+          default: voice.isDefault,
+        }) as SpeechSynthesisVoice,
+    );
   }
 
   async speak(
@@ -78,49 +57,21 @@ export class WebSpeechTTSProvider implements ITTSProvider {
         };
       }
 
-      // 确保已初始化
       await this.initialize();
-
-      // 停止当前朗读
       this.stop();
 
       const finalConfig = { ...this.config, ...config };
-      const utterance = new SpeechSynthesisUtterance(text);
-      this.currentUtterance = utterance;
-
-      // 设置语音参数
-      utterance.lang = finalConfig.lang || 'en-US';
-      utterance.rate = finalConfig.rate || 1.0;
-      utterance.pitch = finalConfig.pitch || 1.0;
-      utterance.volume = finalConfig.volume || 1.0;
-
-      // 选择合适的语音
-      const voice = this.selectVoice(
-        finalConfig.lang || 'en-US',
-        finalConfig.voice,
-      );
-      if (voice) {
-        utterance.voice = voice;
-      }
-
-      return new Promise((resolve) => {
-        utterance.onend = () => {
-          this.currentUtterance = null;
-          resolve({ success: true });
-        };
-
-        utterance.onerror = (event) => {
-          this.currentUtterance = null;
-          resolve({
-            success: false,
-            error: `朗读失败: ${event.error}`,
-          });
-        };
-
-        this.synthesis.speak(utterance);
+      await speakingService.speak({
+        text,
+        lang: finalConfig.lang || 'en-US',
+        voiceId: finalConfig.voice,
+        rate: finalConfig.rate,
+        pitch: finalConfig.pitch,
+        volume: finalConfig.volume,
       });
+
+      return { success: true };
     } catch (error) {
-      this.currentUtterance = null;
       return {
         success: false,
         error: error instanceof Error ? error.message : '未知错误',
@@ -129,18 +80,15 @@ export class WebSpeechTTSProvider implements ITTSProvider {
   }
 
   stop(): void {
-    if (this.synthesis.speaking) {
-      this.synthesis.cancel();
-    }
-    this.currentUtterance = null;
+    speakingService.stop();
   }
 
   isSpeaking(): boolean {
-    return this.synthesis.speaking;
+    return speakingService.isSpeaking();
   }
 
   isAvailable(): boolean {
-    return 'speechSynthesis' in window;
+    return speakingService.isAvailable();
   }
 
   updateConfig(config: Partial<TTSProviderConfig>): void {
@@ -151,48 +99,13 @@ export class WebSpeechTTSProvider implements ITTSProvider {
     return { ...this.config };
   }
 
-  /**
-   * 获取可用的语音列表
-   */
   getVoices(): SpeechSynthesisVoice[] {
     return this.voices;
   }
 
-  /**
-   * 获取指定语言的语音
-   */
   getVoicesByLanguage(lang: string): SpeechSynthesisVoice[] {
     return this.voices.filter((voice) =>
       voice.lang.toLowerCase().startsWith(lang.toLowerCase()),
     );
-  }
-
-  /**
-   * 选择合适的语音
-   */
-  private selectVoice(
-    lang: string,
-    preferredVoice?: string,
-  ): SpeechSynthesisVoice | null {
-    if (this.voices.length === 0) return null;
-
-    // 如果指定了特定语音，尝试找到它
-    if (preferredVoice) {
-      const voice = this.voices.find((v) => v.name === preferredVoice);
-      if (voice) return voice;
-    }
-
-    // 寻找匹配语言的语音
-    const languageVoices = this.getVoicesByLanguage(lang);
-    if (languageVoices.length > 0) {
-      // 优先选择本地语音
-      const localVoice = languageVoices.find((v) => v.localService);
-      if (localVoice) return localVoice;
-
-      // 否则返回第一个匹配的语音
-      return languageVoices[0];
-    }
-
-    return null;
   }
 }

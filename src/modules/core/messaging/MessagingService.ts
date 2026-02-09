@@ -10,9 +10,10 @@
  * - 错误处理和重试机制
  */
 
-import { browser } from 'wxt/browser';
 import { UserSettings, ContextMenuMessage } from '../../shared/types/storage';
 import { ContextMenuActionType, UrlPatternType } from '../../shared/types/core';
+import type { RuntimeMessagingPort } from '../../architecture/core/ports';
+import { runtimeMessagingPort } from '../../architecture/bootstrap/defaultAdapters';
 import {
   MessagingServiceConfig,
   MessageSendResult,
@@ -38,6 +39,7 @@ export class MessagingService {
 
   // 配置和状态
   private readonly config: MessagingServiceConfig;
+  private readonly runtimeMessagingPort: RuntimeMessagingPort;
   private messageListeners: Map<string, MessageListener[]> = new Map();
   private messageHistory: Message[] = [];
   private maxHistorySize = 100;
@@ -53,6 +55,8 @@ export class MessagingService {
       enableBroadcast: false,
       ...config,
     };
+    this.runtimeMessagingPort =
+      this.config.runtimeMessagingPort || runtimeMessagingPort;
   }
 
   /**
@@ -159,7 +163,7 @@ export class MessagingService {
    */
   private async queryTabs(options: TabQueryOptions = {}): Promise<any[]> {
     try {
-      return await browser.tabs.query({
+      return await this.runtimeMessagingPort.queryTabs({
         active: true,
         currentWindow: true,
         ...options,
@@ -183,7 +187,10 @@ export class MessagingService {
     options: MessageSendOptions = {},
   ): Promise<MessageSendResult> {
     try {
-      const response = await browser.tabs.sendMessage(tabId, message);
+      const response = await this.runtimeMessagingPort.sendToTab(
+        tabId,
+        message,
+      );
 
       if (this.config.enableLogging) {
         console.log(
@@ -237,7 +244,7 @@ export class MessagingService {
     options: MessageSendOptions = {},
   ): Promise<MessageSendResult> {
     try {
-      const response = await browser.runtime.sendMessage(message);
+      const response = await this.runtimeMessagingPort.sendToRuntime(message);
 
       if (this.config.enableLogging) {
         console.log('[MessagingService] 发送到运行时成功:', message.type);

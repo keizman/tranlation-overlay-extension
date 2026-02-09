@@ -13,6 +13,8 @@ import {
 } from '../shared/types/core';
 import { createModuleLogger } from '../shared/utils/DebugLogger';
 import { httpClient } from '../auth/RequestInterceptor';
+import { audioPlaybackService } from '../architecture/bootstrap/defaultAdapters';
+import type { AudioPlaybackSession } from '../architecture/core/ports';
 
 const wordTTSLog = createModuleLogger('WordTTS');
 
@@ -29,15 +31,6 @@ function serializeError(error: unknown) {
   return { value: String(error) };
 }
 
-// ==================== AudioContext 单例管理 ====================
-
-/**
- * 全局 AudioContext 单例
- * 避免每次播放都创建/销毁，减少音频系统初始化开销
- */
-let globalAudioContext: AudioContext | null = null;
-let isAudioContextWarmedUp = false;
-
 // ==================== Word TTS 单例锁状态 ====================
 
 /**
@@ -46,20 +39,16 @@ let isAudioContextWarmedUp = false;
  */
 let isWordTTSPlaying = false;
 let currentWordTTSUrl: string | null = null;
-let currentWordTTSSource: AudioBufferSourceNode | null = null;
+let currentWordTTSSession: AudioPlaybackSession | null = null;
 
 /**
  * 停止当前 Word TTS 播放
  */
 function stopCurrentWordTTS(): void {
-  if (currentWordTTSSource) {
-    try {
-      currentWordTTSSource.stop();
-      wordTTSLog.log('已停止当前 Word TTS 播放');
-    } catch (_e) {
-      // 可能已停止，忽略错误
-    }
-    currentWordTTSSource = null;
+  if (currentWordTTSSession) {
+    audioPlaybackService.stop(currentWordTTSSession);
+    currentWordTTSSession = null;
+    wordTTSLog.log('已停止当前 Word TTS 播放');
   }
   isWordTTSPlaying = false;
   currentWordTTSUrl = null;
@@ -68,8 +57,8 @@ function stopCurrentWordTTS(): void {
 // ==================== 页面可见性监听 ====================
 
 /**
- * 页面可见性变化时自动恢复 AudioContext
- * 解决后台标签页返回后音频失效的问题
+ * 页面可见性变化时自动预热音频系统
+ * 解决后台标签页返回后音频恢复问题
  */
 let isVisibilityListenerSetup = false;
 
@@ -79,17 +68,9 @@ function setupVisibilityListener(): void {
 
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState === 'visible') {
-      wordTTSLog.log('页面恢复可见，检查 AudioContext 状态...');
-      try {
-        const ctx = getGlobalAudioContext();
-        if (ctx.state === 'suspended') {
-          wordTTSLog.log('AudioContext 被挂起，正在恢复...');
-          await ctx.resume();
-          wordTTSLog.log('AudioContext 已恢复, state:', ctx.state);
-        }
-      } catch (err) {
-        wordTTSLog.warn('恢复 AudioContext 失败:', err);
-      }
+      void audioPlaybackService.warmUp().catch((err) => {
+        wordTTSLog.warn('恢复音频系统失败:', err);
+      });
     }
   });
 
@@ -97,107 +78,30 @@ function setupVisibilityListener(): void {
 }
 
 /**
- * 获取全局 AudioContext 单例
- * 如果不存在则创建，如果已关闭则重新创建
- */
-function getGlobalAudioContext(): AudioContext {
-  if (!globalAudioContext || globalAudioContext.state === 'closed') {
-    // 如果 AudioContext 被关闭，重置预热状态
-    if (globalAudioContext?.state === 'closed') {
-      wordTTSLog.log('AudioContext 已关闭，重建并重置预热状态');
-      isAudioContextWarmedUp = false;
-    }
-
-    const AudioContextClass =
-      (window as any).AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContextClass) {
-      throw new Error('AudioContext not supported');
-    }
-    const newContext = new AudioContextClass();
-    globalAudioContext = newContext;
-    wordTTSLog.log('AudioContext 单例已创建, state:', newContext.state);
-    return newContext;
-  }
-  return globalAudioContext;
-}
-
-/**
  * 预热 Word TTS 音频系统（单例版本）
- * 只在首次调用时真正预热，后续调用只确保 AudioContext 处于运行状态
+ * 通过 adapter 预热，避免在业务层直接依赖 AudioContext
  */
 async function warmUpWordTTSAudio(): Promise<void> {
-  try {
-    const audioContext = getGlobalAudioContext();
-
-    // 如果 AudioContext 被挂起（常见于移动端），需要恢复
-    if (audioContext.state === 'suspended') {
-      wordTTSLog.log('AudioContext 被挂起，正在恢复...');
-      await audioContext.resume();
-      wordTTSLog.log('AudioContext 已恢复, state:', audioContext.state);
-    }
-
-    // 只在首次预热时播放静音音频
-    if (!isAudioContextWarmedUp) {
-      wordTTSLog.log('首次预热音频系统...');
-
-      // 播放一段极短的静音来激活音频管道
-      const buffer = audioContext.createBuffer(
-        1,
-        audioContext.sampleRate * 0.01,
-        audioContext.sampleRate,
-      ); // 10ms 静音
-      const source = audioContext.createBufferSource();
-      source.buffer = buffer;
-      source.connect(audioContext.destination);
-      source.start(0);
-
-      isAudioContextWarmedUp = true;
-      wordTTSLog.log('🔊 音频系统预热完成');
-    }
-  } catch (err) {
-    wordTTSLog.warn('音频预热失败:', err);
-  }
+  await audioPlaybackService.warmUp();
 }
 
 /**
- * 使用 Web Audio API 播放音频 Blob
- * 比 HTML5 Audio 元素有更低的延迟和更精细的控制
- * @returns AudioBufferSourceNode 引用，用于停止播放
+ * 使用架构层音频播放服务播放 Word TTS
+ * @returns AudioPlaybackSession 引用，用于停止播放
  */
-async function playWordTTSAudio(blob: Blob): Promise<AudioBufferSourceNode> {
-  const audioContext = getGlobalAudioContext();
+async function playWordTTSAudio(blob: Blob): Promise<AudioPlaybackSession> {
+  const session = await audioPlaybackService.playBlob(blob);
+  currentWordTTSSession = session;
 
-  // 确保 AudioContext 处于运行状态
-  if (audioContext.state === 'suspended') {
-    await audioContext.resume();
-  }
-
-  // 将 Blob 转换为 ArrayBuffer
-  const arrayBuffer = await blob.arrayBuffer();
-
-  // 解码音频数据
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-  // 创建音频源并播放
-  const source = audioContext.createBufferSource();
-  source.buffer = audioBuffer;
-  source.connect(audioContext.destination);
-
-  // 存储到全局引用
-  currentWordTTSSource = source;
-
-  source.onended = () => {
-    wordTTSLog.log('Web Audio API 播放结束');
-    // 播放结束后重置状态
+  void session.finished.then(() => {
+    if (currentWordTTSSession?.id !== session.id) return;
+    wordTTSLog.log('音频播放结束');
     isWordTTSPlaying = false;
     currentWordTTSUrl = null;
-    currentWordTTSSource = null;
-  };
+    currentWordTTSSession = null;
+  });
 
-  source.start(0);
-  wordTTSLog.log('Web Audio API 开始播放');
-
-  return source;
+  return session;
 }
 
 // Word TTS 事件委托是否已设置

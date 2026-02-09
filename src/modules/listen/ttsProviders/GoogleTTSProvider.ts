@@ -7,6 +7,8 @@ import { ITTSProvider, TTSProviderConfig } from './ITTSProvider';
 import { TTSResult } from '../types';
 import { TIMER_CONSTANTS } from '../../pronunciation/config';
 import { httpClient } from '../../auth/RequestInterceptor';
+import { audioPlaybackService } from '../../architecture/bootstrap/defaultAdapters';
+import type { AudioPlaybackSession } from '../../architecture/core/ports';
 
 const GOOGLE_TTS_ENDPOINT = '/translate_tts';
 
@@ -14,7 +16,7 @@ export class GoogleTTSProvider implements ITTSProvider {
   readonly name = 'google';
 
   private config: TTSProviderConfig;
-  private currentAudio: HTMLAudioElement | null = null;
+  private currentSession: AudioPlaybackSession | null = null;
 
   constructor(config: TTSProviderConfig = {}) {
     this.config = {
@@ -50,9 +52,7 @@ export class GoogleTTSProvider implements ITTSProvider {
       const audioUrl = `${GOOGLE_TTS_ENDPOINT}?${params.toString()}`;
 
       console.log(`[DEBUG] Google TTS URL: ${audioUrl}, lang: ${lang}`);
-
-      const audio = new Audio();
-      this.currentAudio = audio;
+      await audioPlaybackService.warmUp();
 
       return new Promise((resolve) => {
         let isResolved = false;
@@ -60,7 +60,8 @@ export class GoogleTTSProvider implements ITTSProvider {
         const timeout = setTimeout(() => {
           if (!isResolved) {
             isResolved = true;
-            this.currentAudio = null;
+            audioPlaybackService.stop(this.currentSession);
+            this.currentSession = null;
             resolve({
               success: false,
               error: 'Google语音加载超时',
@@ -70,50 +71,7 @@ export class GoogleTTSProvider implements ITTSProvider {
 
         const cleanup = () => {
           clearTimeout(timeout);
-          this.currentAudio = null;
-        };
-
-        audio.onended = () => {
-          if (!isResolved) {
-            isResolved = true;
-            cleanup();
-            resolve({ success: true });
-          }
-        };
-
-        audio.onerror = () => {
-          if (!isResolved) {
-            isResolved = true;
-            cleanup();
-            resolve({
-              success: false,
-              error: 'Google语音播放失败',
-            });
-          }
-        };
-
-        audio.oncanplay = () => {
-          audio.play().catch((error) => {
-            if (!isResolved) {
-              isResolved = true;
-              cleanup();
-              resolve({
-                success: false,
-                error: `音频播放失败: ${error.message}`,
-              });
-            }
-          });
-        };
-
-        audio.onabort = () => {
-          if (!isResolved) {
-            isResolved = true;
-            cleanup();
-            resolve({
-              success: false,
-              error: 'Google语音加载被中断',
-            });
-          }
+          this.currentSession = null;
         };
 
         httpClient
@@ -125,8 +83,16 @@ export class GoogleTTSProvider implements ITTSProvider {
 
             const blob = await response.blob();
             if (blob.size > 0) {
-              audio.src = URL.createObjectURL(blob);
-              audio.load();
+              const session = await audioPlaybackService.playBlob(blob);
+              this.currentSession = session;
+              void session.finished.then(() => {
+                if (this.currentSession?.id !== session.id) return;
+                if (!isResolved) {
+                  isResolved = true;
+                  cleanup();
+                  resolve({ success: true });
+                }
+              });
               return;
             }
 
@@ -151,7 +117,7 @@ export class GoogleTTSProvider implements ITTSProvider {
           });
       });
     } catch (error) {
-      this.currentAudio = null;
+      this.currentSession = null;
       return {
         success: false,
         error: error instanceof Error ? error.message : '未知错误',
@@ -160,19 +126,14 @@ export class GoogleTTSProvider implements ITTSProvider {
   }
 
   stop(): void {
-    if (this.currentAudio) {
-      this.currentAudio.pause();
-      this.currentAudio.currentTime = 0;
-      // Revoke object URL to free memory
-      if (this.currentAudio.src.startsWith('blob:')) {
-        URL.revokeObjectURL(this.currentAudio.src);
-      }
-      this.currentAudio = null;
+    if (this.currentSession) {
+      audioPlaybackService.stop(this.currentSession);
+      this.currentSession = null;
     }
   }
 
   isSpeaking(): boolean {
-    return this.currentAudio !== null && !this.currentAudio.paused;
+    return !!this.currentSession && this.currentSession.isPlaying();
   }
 
   isAvailable(): boolean {

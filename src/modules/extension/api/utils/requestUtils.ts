@@ -5,6 +5,10 @@
 import { ApiConfig } from '../../../shared/types/api';
 import { BackgroundProxyResponse } from '../types';
 import { createModuleLogger } from '../../../shared/utils/Report';
+import {
+  networkPolicyService,
+  runtimeMessagingPort,
+} from '../../../architecture/bootstrap/defaultAdapters';
 
 const logger = createModuleLogger('ChatApiRequest');
 
@@ -58,16 +62,6 @@ async function sendDirectRequest(
     }
   }
 
-  const fetchOptions: RequestInit = {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(requestBody),
-  };
-
-  if (timeout !== undefined && timeout > 0) {
-    fetchOptions.signal = AbortSignal.timeout(timeout);
-  }
-
   if (traceChat) {
     logger.log('Chat request start', {
       endpoint: apiConfig.apiEndpoint,
@@ -78,7 +72,14 @@ async function sendDirectRequest(
     });
   }
 
-  const response = await fetch(apiConfig.apiEndpoint, fetchOptions);
+  const response = await networkPolicyService.request({
+    url: apiConfig.apiEndpoint,
+    method: 'POST',
+    headers,
+    body: JSON.stringify(requestBody),
+    timeoutMs: timeout,
+    retries: 1,
+  });
 
   if (traceChat) {
     if (response.ok) {
@@ -146,50 +147,44 @@ async function sendViaBackground(
     });
   }
 
-  return new Promise((resolve) => {
-    browser.runtime.sendMessage(
-      {
-        type: 'api-request',
-        data: {
-          url: apiConfig.apiEndpoint,
-          method: 'POST',
-          headers,
-          body: JSON.stringify(requestBody),
-          timeout: timeout,
-        },
-      },
-      (response: BackgroundProxyResponse) => {
-        if (response.success) {
-          if (traceChat) {
-            logger.log('Chat request success (background)', {
-              endpoint: apiConfig.apiEndpoint,
-            });
-          }
-          const mockResponse = {
-            ok: true,
-            status: 200,
-            statusText: 'OK',
-            json: async () => response.data,
-          } as Response;
-          resolve(mockResponse);
-        } else {
-          if (traceChat) {
-            logger.error('Chat request failed (background)', {
-              endpoint: apiConfig.apiEndpoint,
-              status: response.error?.status || 500,
-              statusText: response.error?.statusText || 'Internal Server Error',
-              error: response.error || null,
-            });
-          }
-          const mockResponse = {
-            ok: false,
-            status: response.error?.status || 500,
-            statusText: response.error?.statusText || 'Internal Server Error',
-            json: async () => ({ error: response.error }),
-          } as Response;
-          resolve(mockResponse);
-        }
-      },
-    );
-  });
+  const response = (await runtimeMessagingPort.sendToRuntime({
+    type: 'api-request',
+    data: {
+      url: apiConfig.apiEndpoint,
+      method: 'POST',
+      headers,
+      body: JSON.stringify(requestBody),
+      timeout: timeout,
+    },
+  })) as BackgroundProxyResponse;
+
+  if (response.success) {
+    if (traceChat) {
+      logger.log('Chat request success (background)', {
+        endpoint: apiConfig.apiEndpoint,
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => response.data,
+    } as Response;
+  }
+
+  if (traceChat) {
+    logger.error('Chat request failed (background)', {
+      endpoint: apiConfig.apiEndpoint,
+      status: response.error?.status || 500,
+      statusText: response.error?.statusText || 'Internal Server Error',
+      error: response.error || null,
+    });
+  }
+
+  return {
+    ok: false,
+    status: response.error?.status || 500,
+    statusText: response.error?.statusText || 'Internal Server Error',
+    json: async () => ({ error: response.error }),
+  } as Response;
 }

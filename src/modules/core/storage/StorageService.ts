@@ -10,10 +10,11 @@
  * - 配置统计信息
  */
 
-import { browser } from 'wxt/browser';
 import { UserSettings } from '../../shared/types/storage';
 import { ApiConfig, ApiConfigItem } from '../../shared/types/api';
 import { DEFAULT_SETTINGS } from '../../shared/constants/defaults';
+import type { SettingsStoragePort } from '../../architecture/core/ports';
+import { syncSettingsStoragePort } from '../../architecture/bootstrap/defaultAdapters';
 import {
   StorageServiceConfig,
   StorageOperationResult,
@@ -36,6 +37,7 @@ export class StorageService {
   // 配置和状态
   private readonly config: StorageServiceConfig;
   private readonly storageKey: string;
+  private readonly settingsStoragePort: SettingsStoragePort;
   private eventListeners: Map<StorageEventType, StorageEventListener[]> =
     new Map();
 
@@ -51,6 +53,8 @@ export class StorageService {
       ...config,
     };
     this.storageKey = this.config.storageKey!;
+    this.settingsStoragePort =
+      this.config.settingsStoragePort || syncSettingsStoragePort;
   }
 
   /**
@@ -138,15 +142,16 @@ export class StorageService {
    */
   public async getUserSettings(): Promise<UserSettings> {
     try {
-      const result = await browser.storage.sync.get(StorageService.STORAGE_KEY);
-      const serializedData = result[StorageService.STORAGE_KEY];
+      const serializedData = await this.settingsStoragePort.get(
+        StorageService.STORAGE_KEY,
+      );
 
       if (!serializedData) {
         this.emitEvent(StorageEventType.SETTINGS_LOADED, DEFAULT_SETTINGS);
         return DEFAULT_SETTINGS;
       }
 
-      const userSettings: UserSettings = JSON.parse(serializedData);
+      const userSettings: UserSettings = JSON.parse(String(serializedData));
 
       console.log(
         '[StorageService] 读取设置 - fullTextTTSVoiceName:',
@@ -213,9 +218,7 @@ export class StorageService {
         JSON.parse(serializedData).fullTextTTSVoiceName,
       );
 
-      await browser.storage.sync.set({
-        [this.storageKey]: serializedData,
-      });
+      await this.settingsStoragePort.set(this.storageKey, serializedData);
 
       console.log('[StorageService] 保存成功 - storageKey:', this.storageKey);
 
@@ -412,7 +415,7 @@ export class StorageService {
    */
   public async clearAllData(): Promise<StorageOperationResult> {
     try {
-      await browser.storage.sync.remove(this.storageKey);
+      await this.settingsStoragePort.remove(this.storageKey);
       this.emitEvent(StorageEventType.DATA_CLEARED);
       return { success: true };
     } catch (error) {

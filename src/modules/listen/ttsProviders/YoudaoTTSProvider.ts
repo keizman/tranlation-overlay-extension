@@ -6,12 +6,14 @@
 import { ITTSProvider, TTSProviderConfig } from './ITTSProvider';
 import { TTSResult } from '../types';
 import { TIMER_CONSTANTS, API_CONSTANTS } from '../../pronunciation/config';
+import { audioPlaybackService } from '../../architecture/bootstrap/defaultAdapters';
+import type { AudioPlaybackSession } from '../../architecture/core/ports';
 
 export class YoudaoTTSProvider implements ITTSProvider {
   readonly name = 'youdao';
 
   private config: TTSProviderConfig;
-  private currentAudio: HTMLAudioElement | null = null;
+  private currentSession: AudioPlaybackSession | null = null;
 
   constructor(config: TTSProviderConfig = {}) {
     this.config = {
@@ -46,9 +48,7 @@ export class YoudaoTTSProvider implements ITTSProvider {
         `[DEBUG] 有道TTS URL: ${audioUrl}, accent: ${accent}, type: ${type}`,
       );
 
-      // 创建音频元素
-      const audio = new Audio(audioUrl);
-      this.currentAudio = audio;
+      await audioPlaybackService.warmUp();
 
       return new Promise((resolve) => {
         let isResolved = false;
@@ -57,7 +57,8 @@ export class YoudaoTTSProvider implements ITTSProvider {
         const timeout = setTimeout(() => {
           if (!isResolved) {
             isResolved = true;
-            this.currentAudio = null;
+            audioPlaybackService.stop(this.currentSession);
+            this.currentSession = null;
             resolve({
               success: false,
               error: '有道语音加载超时',
@@ -67,78 +68,35 @@ export class YoudaoTTSProvider implements ITTSProvider {
 
         const cleanup = () => {
           clearTimeout(timeout);
-          this.currentAudio = null;
+          this.currentSession = null;
         };
 
-        audio.onended = () => {
-          if (!isResolved) {
-            isResolved = true;
-            cleanup();
-            resolve({ success: true });
-          }
-        };
-
-        audio.onerror = (event) => {
-          if (!isResolved) {
-            isResolved = true;
-            cleanup();
-            resolve({
-              success: false,
-              error: '有道语音播放失败',
+        audioPlaybackService
+          .playUrl(audioUrl)
+          .then((session) => {
+            this.currentSession = session;
+            void session.finished.then(() => {
+              if (this.currentSession?.id !== session.id) return;
+              if (!isResolved) {
+                isResolved = true;
+                cleanup();
+                resolve({ success: true });
+              }
             });
-          }
-        };
-
-        audio.onloadstart = () => {
-          // 音频开始加载
-        };
-
-        audio.oncanplay = () => {
-          // 音频可以播放
-          audio.play().catch((error) => {
+          })
+          .catch((error) => {
             if (!isResolved) {
               isResolved = true;
               cleanup();
               resolve({
                 success: false,
-                error: `音频播放失败: ${error.message}`,
+                error: `有道语音初始化失败: ${String(error)}`,
               });
             }
           });
-        };
-
-        // 网络错误处理
-        audio.onabort = () => {
-          if (!isResolved) {
-            isResolved = true;
-            cleanup();
-            resolve({
-              success: false,
-              error: '有道语音加载被中断',
-            });
-          }
-        };
-
-        audio.onstalled = () => {
-          // 加载停滞，但不立即失败，等待超时处理
-        };
-
-        // 开始加载音频
-        try {
-          audio.load();
-        } catch (error) {
-          if (!isResolved) {
-            isResolved = true;
-            cleanup();
-            resolve({
-              success: false,
-              error: `有道语音初始化失败: ${error}`,
-            });
-          }
-        }
       });
     } catch (error) {
-      this.currentAudio = null;
+      this.currentSession = null;
       return {
         success: false,
         error: error instanceof Error ? error.message : '未知错误',
@@ -147,15 +105,14 @@ export class YoudaoTTSProvider implements ITTSProvider {
   }
 
   stop(): void {
-    if (this.currentAudio) {
-      this.currentAudio.pause();
-      this.currentAudio.currentTime = 0;
-      this.currentAudio = null;
+    if (this.currentSession) {
+      audioPlaybackService.stop(this.currentSession);
+      this.currentSession = null;
     }
   }
 
   isSpeaking(): boolean {
-    return this.currentAudio !== null && !this.currentAudio.paused;
+    return !!this.currentSession && this.currentSession.isPlaying();
   }
 
   isAvailable(): boolean {
@@ -183,20 +140,9 @@ export class YoudaoTTSProvider implements ITTSProvider {
     try {
       const type = accent === 'us' ? 2 : 1;
       const audioUrl = `${API_CONSTANTS.YOUDAO_TTS_BASE_URL}?type=${type}&audio=${encodeURIComponent(text)}`;
-
-      const audio = new Audio(audioUrl);
-
-      return new Promise((resolve) => {
-        audio.oncanplaythrough = () => {
-          resolve(true);
-        };
-
-        audio.onerror = () => {
-          resolve(false);
-        };
-
-        audio.load();
-      });
+      const session = await audioPlaybackService.playUrl(audioUrl);
+      audioPlaybackService.stop(session);
+      return true;
     } catch (_) {
       return false;
     }

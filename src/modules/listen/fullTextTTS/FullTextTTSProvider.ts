@@ -18,6 +18,10 @@ import {
   TEST_CONNECTION_TEXT,
 } from './constants';
 import { createModuleLogger } from '../../shared/utils/DebugLogger';
+import {
+  audioPlaybackService,
+  networkPolicyService,
+} from '../../architecture/bootstrap/defaultAdapters';
 
 const logger = createModuleLogger('FullTextTTSProvider');
 
@@ -149,22 +153,16 @@ export class FullTextTTSProvider {
     });
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(
-        () => controller.abort(),
-        TTS_REQUEST_TIMEOUT,
-      );
-
-      const response = await fetch(url, {
+      const response = await networkPolicyService.request({
+        url,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
         },
         body: JSON.stringify(requestBody),
-        signal: controller.signal,
+        timeoutMs: TTS_REQUEST_TIMEOUT,
+        retries: 1,
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData: APIResponse = await response.json().catch(() => ({}));
@@ -189,7 +187,10 @@ export class FullTextTTSProvider {
       };
     } catch (error) {
       if (error instanceof Error) {
-        if (error.name === 'AbortError') {
+        if (
+          error.name === 'AbortError' ||
+          error.message.toLowerCase().includes('aborted')
+        ) {
           throw new Error('TTS API 请求超时');
         }
         throw error;
@@ -221,14 +222,7 @@ export class FullTextTTSProvider {
     // 使用 Web Audio API 获取精确音频时长
     let audioDuration = 0;
     try {
-      const audioContext = new (window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext })
-          .webkitAudioContext)();
-      const decodedBuffer = await audioContext.decodeAudioData(
-        audioBuffer.slice(0),
-      );
-      audioDuration = decodedBuffer.duration;
-      audioContext.close();
+      audioDuration = await audioPlaybackService.decodeDuration(audioBuffer);
       logger.log(`音频时长: ${audioDuration.toFixed(2)}s`);
     } catch (error) {
       // 如果 Web Audio API 失败，估算时长 (基于 MP3 平均比特率)

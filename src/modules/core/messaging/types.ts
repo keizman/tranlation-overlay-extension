@@ -5,6 +5,7 @@
 
 import { UserSettings, ContextMenuMessage } from '../../shared/types/storage';
 import { ContextMenuActionType, UrlPatternType } from '../../shared/types/core';
+import type { RuntimeMessagingPort } from '../../architecture/core/ports';
 
 // 重新导出导入的类型
 export type {
@@ -135,4 +136,5 @@ export interface MessagingServiceConfig {
   defaultTimeout?: number;
   maxRetries?: number;
   enableBroadcast?: boolean;
+  runtimeMessagingPort?: RuntimeMessagingPort;
 }

@@ -6,6 +6,11 @@
 
 import { WordHighlighter, injectTTSHighlightStyles } from './WordHighlighter';
 import { httpClient } from '../../auth/RequestInterceptor';
+import {
+  audioPlaybackService,
+  speechBoundaryService,
+} from '../../architecture/bootstrap/defaultAdapters';
+import type { AudioPlaybackSession } from '../../architecture/core/ports';
 
 const GOOGLE_TTS_ENDPOINT = '/translate_tts';
 
@@ -57,62 +62,19 @@ const DEFAULT_CONFIG: ParagraphTTSConfig = {
   enabled: true, // 默认启用
 };
 
-// ==================== AudioContext 单例管理 ====================
-
-/**
- * 全局 AudioContext 单例
- * 避免每次播放都创建/销毁，减少音频系统初始化开销
- */
-let paragraphAudioContext: AudioContext | null = null;
-let isParagraphAudioWarmedUp = false;
-
-/**
- * 获取全局 AudioContext 单例
- * 如果不存在则创建，如果已关闭则重新创建
- */
-function getParagraphAudioContext(): AudioContext {
-  if (!paragraphAudioContext || paragraphAudioContext.state === 'closed') {
-    // 如果 AudioContext 被关闭，重置预热状态
-    if (paragraphAudioContext?.state === 'closed') {
-      log('AudioContext 已关闭，重建并重置预热状态');
-      isParagraphAudioWarmedUp = false;
-    }
-
-    const AudioContextClass =
-      (window as any).AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContextClass) {
-      throw new Error('AudioContext not supported');
-    }
-    const newContext = new AudioContextClass();
-    paragraphAudioContext = newContext;
-    log('AudioContext 单例已创建, state:', newContext.state);
-    return newContext;
-  }
-  return paragraphAudioContext;
-}
-
 // ==================== 页面可见性监听 ====================
 
 /**
- * 页面可见性变化时自动恢复 AudioContext
- * 解决后台标签页返回后音频失效的问题
+ * 页面可见性变化时自动预热音频系统
+ * 解决后台标签页返回后音频恢复问题
  */
 let isParagraphVisibilityListenerSetup = false;
 
 function handleParagraphVisibilityChange(): void {
   if (document.visibilityState === 'visible') {
-    log('页面恢复可见，检查 AudioContext 状态...');
-    try {
-      const ctx = getParagraphAudioContext();
-      if (ctx.state === 'suspended') {
-        log('AudioContext 被挂起，正在恢复...');
-        ctx.resume().then(() => {
-          log('AudioContext 已恢复, state:', ctx.state);
-        });
-      }
-    } catch (err) {
-      warn('恢复 AudioContext 失败:', err);
-    }
+    void audioPlaybackService.warmUp().catch((err) => {
+      warn('恢复音频系统失败:', err);
+    });
   }
 }
 
@@ -138,63 +100,6 @@ function removeParagraphVisibilityListener(): void {
   log('页面可见性监听已移除');
 }
 
-/**
- * 预热音频系统（单例版本）
- */
-async function warmUpParagraphAudio(): Promise<void> {
-  try {
-    const audioContext = getParagraphAudioContext();
-
-    if (audioContext.state === 'suspended') {
-      log('AudioContext 被挂起，正在恢复...');
-      await audioContext.resume();
-    }
-
-    if (!isParagraphAudioWarmedUp) {
-      log('首次预热音频系统...');
-      const buffer = audioContext.createBuffer(
-        1,
-        audioContext.sampleRate * 0.01,
-        audioContext.sampleRate,
-      );
-      const source = audioContext.createBufferSource();
-      source.buffer = buffer;
-      source.connect(audioContext.destination);
-      source.start(0);
-      isParagraphAudioWarmedUp = true;
-      log('🔊 音频系统预热完成');
-    }
-  } catch (err) {
-    warn('音频预热失败:', err);
-  }
-}
-
-/**
- * 使用 Web Audio API 播放音频 Blob
- */
-async function _playAudioWithWebAudioAPI(blob: Blob): Promise<void> {
-  const audioContext = getParagraphAudioContext();
-
-  if (audioContext.state === 'suspended') {
-    await audioContext.resume();
-  }
-
-  const arrayBuffer = await blob.arrayBuffer();
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-  const source = audioContext.createBufferSource();
-  source.buffer = audioBuffer;
-  source.connect(audioContext.destination);
-
-  return new Promise((resolve) => {
-    source.onended = () => {
-      log('Web Audio API 播放结束');
-      resolve();
-    };
-    source.start(0);
-    log('Web Audio API 开始播放');
-  });
-}
-
 type PlayState = 'idle' | 'playing' | 'paused';
 
 export class ParagraphTTSService {
@@ -211,10 +116,7 @@ export class ParagraphTTSService {
   private currentText: string = '';
 
   // TTS 引擎
-  private synth: SpeechSynthesis | null = null;
-  private utterance: SpeechSynthesisUtterance | null = null;
-  private googleAudio: HTMLAudioElement | null = null;
-  private currentAudioSource: AudioBufferSourceNode | null = null; // Web Audio API 音频源
+  private currentPlaybackSession: AudioPlaybackSession | null = null;
 
   // 分片播放
   private segments: string[] = [];
@@ -229,12 +131,11 @@ export class ParagraphTTSService {
   constructor(config: Partial<ParagraphTTSConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.highlighter = new WordHighlighter();
-    this.synth = window.speechSynthesis || null;
 
     // 设置调试模式
     setTTSDebugEnabled(this.config.showDebugPanel ?? false);
 
-    log('构造函数 - Web Speech 可用:', !!this.synth);
+    log('构造函数 - 词边界服务可用:', speechBoundaryService.isAvailable());
     log('配置:', JSON.stringify(this.config));
 
     // 注入样式
@@ -260,10 +161,12 @@ export class ParagraphTTSService {
 
   /**
    * 预热音频系统
-   * 使用单例 AudioContext，避免每次都创建/销毁
+   * 通过 adapter 预热，避免业务层直接依赖 AudioContext
    */
   private warmUpAudioSystem(): void {
-    warmUpParagraphAudio();
+    void audioPlaybackService.warmUp().catch((err) => {
+      warn('音频预热失败:', err);
+    });
   }
 
   /**
@@ -398,17 +301,9 @@ export class ParagraphTTSService {
       return;
     }
 
-    // 清理之前的音频对象，防止并发冲突
-    if (this.googleAudio) {
-      this.googleAudio.pause();
-      // 释放 blob URL 防止内存泄漏
-      if (this.googleAudio.src && this.googleAudio.src.startsWith('blob:')) {
-        URL.revokeObjectURL(this.googleAudio.src);
-      }
-      this.googleAudio.src = '';
-      this.googleAudio = null;
-      log('已清理之前的音频对象');
-    }
+    // 停止之前的音频播放会话，防止并发冲突
+    audioPlaybackService.stop(this.currentPlaybackSession);
+    this.currentPlaybackSession = null;
 
     const text = this.segments[index];
     this.state = 'playing';
@@ -472,50 +367,40 @@ export class ParagraphTTSService {
     highlightBoundaryDelay: number,
   ): Promise<void> {
     return new Promise((resolve) => {
-      log('startShadowSpeech - synth 可用:', !!this.synth);
-
-      if (!this.synth) {
+      log(
+        'startShadowSpeech - 词边界服务可用:',
+        speechBoundaryService.isAvailable(),
+      );
+      if (!speechBoundaryService.isAvailable()) {
         warn('Web Speech API 不可用');
         resolve();
         return;
       }
-
-      this.utterance = new SpeechSynthesisUtterance(text);
-      this.utterance.volume = 0; // 静音
-      this.utterance.rate = this.config.speechRate;
-      this.utterance.lang = 'en-US';
-
-      log('Utterance 创建完成，开始 speak...');
-
-      this.utterance.onstart = () => {
-        log('✓ Web Speech 开始');
-      };
-
-      this.utterance.onboundary = (event: SpeechSynthesisEvent) => {
-        if (event.name === 'word') {
-          const globalCharIndex = charOffset + event.charIndex;
-          // 使用传入的 highlightBoundaryDelay 以同步 Google TTS
-          const timeoutId = window.setTimeout(() => {
-            if (this.state === 'playing') {
-              this.highlighter.highlightByCharIndex(globalCharIndex);
-            }
-          }, highlightBoundaryDelay);
-          this.pendingTimeouts.push(timeoutId);
-        }
-      };
-
-      this.utterance.onend = () => {
-        log('✓ Web Speech 结束');
-        resolve();
-      };
-
-      this.utterance.onerror = (e) => {
-        warn('Web Speech 错误:', e.error);
-        resolve();
-      };
-
-      this.synth.speak(this.utterance);
-      log('synth.speak() 已调用');
+      void speechBoundaryService
+        .speakWithWordBoundary(
+          {
+            text,
+            rate: this.config.speechRate,
+            lang: 'en-US',
+          },
+          (charIndex) => {
+            const globalCharIndex = charOffset + charIndex;
+            const timeoutId = window.setTimeout(() => {
+              if (this.state === 'playing') {
+                this.highlighter.highlightByCharIndex(globalCharIndex);
+              }
+            }, highlightBoundaryDelay);
+            this.pendingTimeouts.push(timeoutId);
+          },
+        )
+        .then(() => {
+          log('✓ 词边界检测结束');
+          resolve();
+        })
+        .catch((e) => {
+          warn('词边界检测错误:', e);
+          resolve();
+        });
     });
   }
 
@@ -577,16 +462,15 @@ export class ParagraphTTSService {
       };
 
       const moveToNextSegment = () => {
+        if (isResolved) return;
         log('移动到下一个片段...');
 
         // ⚠️ 关键：清除当前片段的高亮定时器，防止旧片段的高亮继续执行
         this.clearPendingTimeouts();
 
-        // 取消当前 Web Speech (用于词边界检测的静音语音)
-        if (this.synth) {
-          this.synth.cancel();
-          log('已取消 Web Speech');
-        }
+        // 取消当前词边界检测
+        speechBoundaryService.cancel();
+        log('已取消词边界检测');
 
         this.currentSegmentIndex++;
         if (this.currentSegmentIndex < this.segments.length) {
@@ -610,19 +494,9 @@ export class ParagraphTTSService {
           }
 
           log('Google TTS blob 大小:', blob.size, 'bytes');
-
-          // 使用 Web Audio API 播放（低延迟）
-          const audioContext = getParagraphAudioContext();
-
-          if (audioContext.state === 'suspended') {
-            log('AudioContext 被挂起，正在恢复...');
-            await audioContext.resume();
-          }
-
-          const arrayBuffer = await blob.arrayBuffer();
-          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-          const duration = audioBuffer.duration;
+          const playbackSession = await audioPlaybackService.playBlob(blob);
+          this.currentPlaybackSession = playbackSession;
+          const duration = playbackSession.durationSeconds;
           log('✓ 音频解码完成，时长:', duration, 's');
 
           // 设置超时兜底：音频时长 + 5秒缓冲
@@ -630,32 +504,23 @@ export class ParagraphTTSService {
           timeoutId = window.setTimeout(() => {
             if (!isResolved) {
               warn(`⚠️ 音频超时 (${timeoutMs}ms)，强制跳到下一段`);
+              audioPlaybackService.stop(playbackSession);
               moveToNextSegment();
             }
           }, timeoutMs);
-
-          // 创建音频源并播放
-          const source = audioContext.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(audioContext.destination);
-
-          // 存储音频源引用，以便 stop() 时可以立即停止
-          this.currentAudioSource = source;
-
-          source.onended = () => {
-            log('✓ Web Audio API 播放结束 (onended)');
-            this.currentAudioSource = null; // 播放结束后清除引用
-            moveToNextSegment();
-          };
-
-          source.start(0);
-          log('✓ Web Audio API 开始播放');
 
           // 关键修复：音频开始播放时，才触发高亮动画
           if (onPlayStart && !hasStarted) {
             hasStarted = true;
             onPlayStart();
           }
+
+          await playbackSession.finished;
+          log('✓ 音频播放结束 (adapter finished)');
+          if (this.currentPlaybackSession === playbackSession) {
+            this.currentPlaybackSession = null;
+          }
+          moveToNextSegment();
         } catch (err) {
           error('Google TTS 播放流程异常:', err);
           moveToNextSegment();
@@ -713,12 +578,9 @@ export class ParagraphTTSService {
     // 清除待执行的高亮定时器
     this.clearPendingTimeouts();
 
-    if (this.synth) {
-      this.synth.pause();
-    }
-    if (this.googleAudio) {
-      this.googleAudio.pause();
-    }
+    speechBoundaryService.cancel();
+    audioPlaybackService.stop(this.currentPlaybackSession);
+    this.currentPlaybackSession = null;
 
     log('⏸ 已暂停');
   }
@@ -728,12 +590,9 @@ export class ParagraphTTSService {
    */
   resume(): void {
     this.state = 'playing';
-
-    if (this.synth) {
-      this.synth.resume();
-    }
-    if (this.googleAudio) {
-      this.googleAudio.play();
+    if (this.currentSegmentIndex < this.segments.length) {
+      void this.playSegment(this.currentSegmentIndex);
+      return;
     }
 
     log('▶ 继续播放');
@@ -748,27 +607,10 @@ export class ParagraphTTSService {
     // 清除待执行的高亮定时器
     this.clearPendingTimeouts();
 
-    if (this.synth) {
-      this.synth.cancel();
-    }
+    speechBoundaryService.cancel();
 
-    // 停止 Web Audio API 音频源
-    if (this.currentAudioSource) {
-      try {
-        this.currentAudioSource.stop();
-        log('✓ Web Audio API 音频源已停止');
-      } catch (_e) {
-        // 可能已经停止，忽略错误
-      }
-      this.currentAudioSource = null;
-    }
-
-    // 停止旧版 HTML5 Audio（兼容）
-    if (this.googleAudio) {
-      this.googleAudio.pause();
-      this.googleAudio.src = '';
-      this.googleAudio = null;
-    }
+    audioPlaybackService.stop(this.currentPlaybackSession);
+    this.currentPlaybackSession = null;
 
     this.highlighter.cleanup();
     this.currentParagraph = null;
@@ -783,11 +625,12 @@ export class ParagraphTTSService {
    * 清除所有待执行的高亮定时器
    */
   private clearPendingTimeouts(): void {
+    const timeoutCount = this.pendingTimeouts.length;
     for (const id of this.pendingTimeouts) {
       window.clearTimeout(id);
     }
     this.pendingTimeouts = [];
-    log('清除 ' + this.pendingTimeouts.length + ' 个待执行定时器');
+    log('清除 ' + timeoutCount + ' 个待执行定时器');
   }
 
   /**

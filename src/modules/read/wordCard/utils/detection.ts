@@ -3,6 +3,7 @@
  */
 
 import type { WordCardSettings } from '../types';
+import { readingService } from '../../../architecture/bootstrap/defaultAdapters';
 
 /**
  * 判断是否为英文单词
@@ -33,23 +34,15 @@ export interface SelectionInfo {
 }
 
 export function getSelectionInfo(): SelectionInfo | null {
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) {
+  const snapshot = readingService.getSelectionInfo();
+  if (!snapshot) {
     return null;
   }
-
-  const text = selection.toString().trim();
-  if (!text) {
-    return null;
-  }
-
-  const range = selection.getRangeAt(0);
-  const rect = range.getBoundingClientRect();
 
   return {
-    text,
-    rect,
-    isWord: isSingleWord(text) && isEnglishWord(text),
+    text: snapshot.text,
+    rect: snapshot.rect as DOMRect | null,
+    isWord: snapshot.isWord,
   };
 }
 

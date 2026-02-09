@@ -16,6 +16,11 @@ import {
 } from '../components/WordCard';
 import { createModuleLogger } from '../../../shared/utils/Report';
 import { httpClient } from '../../../auth/RequestInterceptor';
+import {
+  audioPlaybackService,
+  speakingService,
+} from '../../../architecture/bootstrap/defaultAdapters';
+import type { AudioPlaybackSession } from '../../../architecture/core/ports';
 
 const logger = createModuleLogger('WordCard');
 const GOOGLE_TTS_ENDPOINT = '/translate_tts';
@@ -62,6 +67,7 @@ export class WordCardManager {
   private lastTriggerAt = 0;
   private lastTriggerSource = '';
   private lastSelectionChangeShowAt = 0;
+  private currentAudioSession: AudioPlaybackSession | null = null;
 
   // ============================================================================
   // 单例
@@ -645,14 +651,17 @@ export class WordCardManager {
   }
 
   private async speakWord(word: string, accent: 'us' | 'uk'): Promise<void> {
+    audioPlaybackService.stop(this.currentAudioSession);
+    this.currentAudioSession = null;
+
     // 检查 API 返回的音频 URL
     const audioUrl = this.state.data?.audio?.[accent];
 
     if (audioUrl && audioUrl.trim() !== '') {
       // 使用 API 返回的音频 URL
       try {
-        const audio = new Audio(audioUrl);
-        audio.play();
+        const session = await audioPlaybackService.playUrl(audioUrl);
+        this.currentAudioSession = session;
         return;
       } catch (err) {
         console.warn(
@@ -679,11 +688,8 @@ export class WordCardManager {
 
       const blob = await response.blob();
       if (blob.size > 0) {
-        const blobUrl = URL.createObjectURL(blob);
-        const audio = new Audio(blobUrl);
-        audio.onended = () => URL.revokeObjectURL(blobUrl);
-        audio.onerror = () => URL.revokeObjectURL(blobUrl);
-        audio.play();
+        const session = await audioPlaybackService.playBlob(blob);
+        this.currentAudioSession = session;
       } else {
         console.warn(
           '[WordCard] Google TTS failed, falling back to Web Speech API',
@@ -701,10 +707,11 @@ export class WordCardManager {
 
   private speakWordFallback(word: string, accent: 'us' | 'uk'): void {
     // 最终回退: 使用 Web Speech API
-    const utterance = new SpeechSynthesisUtterance(word);
-    utterance.lang = accent === 'us' ? 'en-US' : 'en-GB';
-    utterance.rate = 0.9;
-    speechSynthesis.speak(utterance);
+    void speakingService.speak({
+      text: word,
+      lang: accent === 'us' ? 'en-US' : 'en-GB',
+      rate: 0.9,
+    });
   }
 
   // ============================================================================
@@ -712,6 +719,8 @@ export class WordCardManager {
   // ============================================================================
 
   public destroy(): void {
+    audioPlaybackService.stop(this.currentAudioSession);
+    this.currentAudioSession = null;
     this.removeEventListeners();
     this.hideCard();
     this.hideIcon();

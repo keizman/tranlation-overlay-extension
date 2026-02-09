@@ -5,6 +5,7 @@
 
 import { UserSettings } from '../../shared/types/storage';
 import { ApiConfig, ApiConfigItem } from '../../shared/types/api';
+import type { SettingsStoragePort } from '../../architecture/core/ports';
 
 // ==================== 存储操作类型 ====================
 
@@ -35,6 +36,7 @@ export interface StorageServiceConfig {
   enableValidation?: boolean;
   maxRetries?: number;
   storageKey?: string;
+  settingsStoragePort?: SettingsStoragePort;
 }
 
 /**
