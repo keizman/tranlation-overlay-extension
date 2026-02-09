@@ -476,42 +476,73 @@ export class StorageService {
     const validatedSettings = { ...settings };
 
     try {
+      // 先按默认配置进行浅层兜底，避免旧配置缺关键字段导致功能不可用
+      const mergedSettings: UserSettings = {
+        ...DEFAULT_SETTINGS,
+        ...validatedSettings,
+        multilingualConfig: {
+          ...DEFAULT_SETTINGS.multilingualConfig,
+          ...(validatedSettings.multilingualConfig || {}),
+        },
+        pronunciationHotkey: {
+          ...DEFAULT_SETTINGS.pronunciationHotkey,
+          ...(validatedSettings.pronunciationHotkey || {}),
+        },
+        floatingBall: {
+          ...DEFAULT_SETTINGS.floatingBall,
+          ...(validatedSettings.floatingBall || {}),
+        },
+        lazyLoading: {
+          ...DEFAULT_SETTINGS.lazyLoading,
+          ...(validatedSettings.lazyLoading || {}),
+        },
+        wordCard: {
+          ...DEFAULT_SETTINGS.wordCard,
+          ...(validatedSettings.wordCard || {}),
+        },
+        paragraphTTS: {
+          ...DEFAULT_SETTINGS.paragraphTTS,
+          ...(validatedSettings.paragraphTTS || {}),
+        },
+        gestureTranslation: {
+          ...DEFAULT_SETTINGS.gestureTranslation,
+          ...(validatedSettings.gestureTranslation || {}),
+        },
+      };
+
       // 确保必要字段存在
-      if (!validatedSettings.apiConfigs) {
-        validatedSettings.apiConfigs = DEFAULT_SETTINGS.apiConfigs;
+      if (!mergedSettings.apiConfigs) {
+        mergedSettings.apiConfigs = DEFAULT_SETTINGS.apiConfigs;
       }
 
-      if (!validatedSettings.activeApiConfigId) {
-        if (validatedSettings.apiConfigs.length > 0) {
-          validatedSettings.activeApiConfigId =
-            validatedSettings.apiConfigs[0].id;
+      if (!mergedSettings.activeApiConfigId) {
+        if (mergedSettings.apiConfigs.length > 0) {
+          mergedSettings.activeApiConfigId = mergedSettings.apiConfigs[0].id;
         }
       }
 
       // 验证活跃配置是否存在
-      if (validatedSettings.activeApiConfigId) {
-        const activeConfigExists = validatedSettings.apiConfigs.some(
-          (config) => config.id === validatedSettings.activeApiConfigId,
+      if (mergedSettings.activeApiConfigId) {
+        const activeConfigExists = mergedSettings.apiConfigs.some(
+          (config) => config.id === mergedSettings.activeApiConfigId,
         );
 
-        if (!activeConfigExists && validatedSettings.apiConfigs.length > 0) {
-          validatedSettings.activeApiConfigId =
-            validatedSettings.apiConfigs[0].id;
+        if (!activeConfigExists && mergedSettings.apiConfigs.length > 0) {
+          mergedSettings.activeApiConfigId = mergedSettings.apiConfigs[0].id;
         }
       }
 
       // 验证其他必要字段
-      if (!validatedSettings.multilingualConfig) {
-        validatedSettings.multilingualConfig =
-          DEFAULT_SETTINGS.multilingualConfig;
+      if (!mergedSettings.multilingualConfig) {
+        mergedSettings.multilingualConfig = DEFAULT_SETTINGS.multilingualConfig;
       }
 
       // 确保懒加载配置存在
-      if (!validatedSettings.lazyLoading) {
-        validatedSettings.lazyLoading = DEFAULT_SETTINGS.lazyLoading;
+      if (!mergedSettings.lazyLoading) {
+        mergedSettings.lazyLoading = DEFAULT_SETTINGS.lazyLoading;
       }
 
-      return validatedSettings;
+      return mergedSettings;
     } catch (error) {
       console.error(`设置验证异常: ${error}`);
       return DEFAULT_SETTINGS;

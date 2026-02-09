@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import {
   Dialog,
   DialogContent,
@@ -12,6 +13,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/src/composables/useAuth';
 
+const { t } = useI18n();
+
 interface Props {
   open?: boolean;
 }
@@ -21,7 +24,7 @@ const emit = defineEmits<{
   'update:open': [value: boolean];
 }>();
 
-const { login } = useAuth();
+const { login, isLoggedIn } = useAuth();
 
 const isOpen = computed({
   get: () => props.open ?? false,
@@ -33,11 +36,21 @@ const password = ref('');
 const error = ref('');
 const loading = ref(false);
 
+const handleFocusIn = (event: FocusEvent) => {
+  const target = event.target as HTMLElement | null;
+  if (!target || typeof target.scrollIntoView !== 'function') {
+    return;
+  }
+  window.setTimeout(() => {
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, 120);
+};
+
 const handleSubmit = async () => {
   error.value = '';
 
   if (!usernameOrEmail.value || !password.value) {
-    error.value = '请填写完整信息';
+    error.value = t('auth.fillComplete');
     return;
   }
 
@@ -51,11 +64,20 @@ const handleSubmit = async () => {
 
     isOpen.value = false;
   } catch (err: any) {
-    error.value = err.message || '登录失败,请检查用户名和密码';
+    error.value = err.message || t('auth.loginFailed');
   } finally {
     loading.value = false;
   }
 };
+
+watch(isLoggedIn, (loggedIn) => {
+  if (!loggedIn) {
+    return;
+  }
+  isOpen.value = false;
+  error.value = '';
+  loading.value = false;
+});
 </script>
 
 <template>
@@ -63,28 +85,36 @@ const handleSubmit = async () => {
     <DialogTrigger as-child>
       <slot />
     </DialogTrigger>
-    <DialogContent class="sm:max-w-[425px]">
+    <DialogContent
+      class="sm:max-w-[425px] top-[max(1rem,env(safe-area-inset-top))] -translate-y-0 sm:top-1/2 sm:-translate-y-1/2 max-h-[85dvh] overflow-y-auto pb-[max(1rem,env(safe-area-inset-bottom))]"
+    >
       <DialogHeader>
-        <DialogTitle>登录</DialogTitle>
+        <DialogTitle>{{ $t('auth.login') }}</DialogTitle>
       </DialogHeader>
-      <form @submit.prevent="handleSubmit" class="grid gap-4 py-4">
+      <form
+        @submit.prevent="handleSubmit"
+        @focusin="handleFocusIn"
+        class="grid gap-4 py-4"
+      >
         <div class="grid gap-2">
-          <Label for="username-or-email">用户名或邮箱</Label>
+          <Label for="username-or-email">
+            {{ $t('auth.usernameOrEmail') }}
+          </Label>
           <Input
             id="username-or-email"
             v-model="usernameOrEmail"
-            placeholder="输入用户名或邮箱"
+            :placeholder="$t('auth.usernameOrEmailPlaceholder')"
             :disabled="loading"
             required
           />
         </div>
         <div class="grid gap-2">
-          <Label for="password">密码</Label>
+          <Label for="password">{{ $t('auth.password') }}</Label>
           <Input
             id="password"
             v-model="password"
             type="password"
-            placeholder="输入密码"
+            :placeholder="$t('auth.passwordInputPlaceholder')"
             :disabled="loading"
             required
           />
@@ -95,7 +125,7 @@ const handleSubmit = async () => {
         </div>
 
         <Button type="submit" :disabled="loading" class="w-full">
-          {{ loading ? '登录中...' : '登录' }}
+          {{ loading ? $t('auth.loggingIn') : $t('auth.login') }}
         </Button>
       </form>
     </DialogContent>

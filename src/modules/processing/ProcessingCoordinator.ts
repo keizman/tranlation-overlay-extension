@@ -12,9 +12,22 @@ import {
   TranslationPosition,
 } from '../shared/types/core';
 import { createModuleLogger } from '../shared/utils/DebugLogger';
+import { httpClient } from '../auth/RequestInterceptor';
 
-// Word TTS 专用日志
 const wordTTSLog = createModuleLogger('WordTTS');
+
+const GOOGLE_TTS_ENDPOINT = '/translate_tts';
+
+function serializeError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+  return { value: String(error) };
+}
 
 // ==================== AudioContext 单例管理 ====================
 
@@ -229,13 +242,14 @@ function setupWordTTSEventDelegation(): void {
         '';
       if (!wordToSpeak) return;
 
-      // 构建音频 URL
-      const GOOGLE_TTS_BASE_URL =
-        'https://translate.planktonfly.com/translate_tts';
-      const GOOGLE_TTS_AUTH = 'Basic bXl1c2VyOjEyMzQ1NjY=';
-      const audioUrl = `${GOOGLE_TTS_BASE_URL}?ie=UTF-8&client=gtx&tl=en-US&q=${encodeURIComponent(wordToSpeak)}`;
+      const params = new URLSearchParams({
+        ie: 'UTF-8',
+        client: 'gtx',
+        tl: 'en-US',
+        q: wordToSpeak,
+      });
+      const audioUrl = `${GOOGLE_TTS_ENDPOINT}?${params.toString()}`;
 
-      // ===== 单例锁逻辑 =====
       if (isWordTTSPlaying) {
         if (currentWordTTSUrl === audioUrl) {
           // 正在播放同一单词，忽略重复点击
@@ -251,34 +265,58 @@ function setupWordTTSEventDelegation(): void {
       // 标记正在播放
       isWordTTSPlaying = true;
       currentWordTTSUrl = audioUrl;
-      wordTTSLog.log('Word TTS (委托):', wordToSpeak);
+      wordTTSLog.log('Word TTS (委托):', {
+        text: wordToSpeak,
+        audioUrl,
+      });
 
       try {
-        // 1. 先预热音频系统
         await warmUpWordTTSAudio();
 
-        // 2. 下载音频
-        wordTTSLog.log('开始 fetch...');
-        const response = await fetch(audioUrl, {
-          method: 'GET',
-          headers: {
-            'X-Proxy-Target': 'google',
-            Authorization: GOOGLE_TTS_AUTH,
-          },
+        wordTTSLog.log('开始 fetch...', {
+          audioUrl,
+          textLength: wordToSpeak.length,
         });
+        const response = await httpClient.get(audioUrl);
+        if (!response.ok) {
+          const responseBodySnippet = await response
+            .clone()
+            .text()
+            .then((text) => text.slice(0, 500))
+            .catch(() => '');
+          wordTTSLog.error('Word TTS HTTP error', {
+            audioUrl,
+            status: response.status,
+            statusText: response.statusText,
+            bodySnippet: responseBodySnippet,
+          });
+          stopCurrentWordTTS();
+          return;
+        }
 
-        if (response.ok) {
-          const blob = await response.blob();
-          wordTTSLog.log('下载完成, Blob:', blob.size, 'bytes');
+        const blob = await response.blob();
+        if (blob.size > 0) {
+          wordTTSLog.log('下载完成', {
+            audioUrl,
+            blobSize: blob.size,
+            contentType: response.headers.get('content-type') || '',
+          });
           await playWordTTSAudio(blob);
         } else {
-          wordTTSLog.error('Request failed:', response.status);
-          // 请求失败也要重置状态
+          wordTTSLog.error('Word TTS 响应音频为空', {
+            audioUrl,
+            status: response.status,
+            statusText: response.statusText,
+            contentType: response.headers.get('content-type') || '',
+          });
           stopCurrentWordTTS();
         }
       } catch (error) {
-        wordTTSLog.error('Error:', error);
-        // 异常也要重置状态
+        wordTTSLog.error('Word TTS fetch failed', {
+          audioUrl,
+          text: wordToSpeak,
+          error: serializeError(error),
+        });
         stopCurrentWordTTS();
       }
     },

@@ -68,11 +68,8 @@ export class ParagraphTranslationService {
       ParagraphTranslationService.instance = new ParagraphTranslationService(
         lazyLoadingService,
       );
-    } else if (
-      lazyLoadingService &&
-      !ParagraphTranslationService.instance.lazyLoadingService
-    ) {
-      // 如果实例已存在但没有懒加载服务，则更新
+    } else if (lazyLoadingService) {
+      // 如果传入了新的懒加载服务，始终更新引用，避免持有过期实例
       ParagraphTranslationService.instance.lazyLoadingService =
         lazyLoadingService;
     }
@@ -128,7 +125,7 @@ export class ParagraphTranslationService {
 
     // 停止懒加载观察
     if (this.lazyLoadingService) {
-      this.lazyLoadingService.unobserveSegments([]);
+      this.lazyLoadingService.clearSession();
     }
 
     console.log('[段落翻译] 翻译服务已停止');
@@ -147,7 +144,7 @@ export class ParagraphTranslationService {
 
     // 停止懒加载观察
     if (this.lazyLoadingService) {
-      this.lazyLoadingService.unobserveSegments([]);
+      this.lazyLoadingService.clearSession();
     }
 
     console.log('[段落翻译] 已清除所有翻译');
@@ -710,6 +707,9 @@ export class ParagraphTranslationService {
         await this.translateElements(elementsToTranslate);
       },
     );
+
+    // 开启一个全新的懒加载会话，避免继承旧页面状态
+    this.lazyLoadingService.beginSession();
 
     // 开始观察段落
     this.lazyLoadingService.observeSegments(segments);

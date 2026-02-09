@@ -599,5 +599,32 @@
   "writeSettings": {
     "title": "Write Settings",
     "description": "Writing assistance and grammar check (Coming Soon)"
+  },
+  "auth": {
+    "register": "Register",
+    "login": "Login",
+    "logout": "Logout",
+    "username": "Username",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "usernameOrEmail": "Username or Email",
+    "notLoggedIn": "Not Logged In",
+    "registerAccount": "Register Account",
+    "registering": "Registering...",
+    "loggingIn": "Logging in...",
+    "usernameMinLength": "Username must be at least 3 characters",
+    "usernamePlaceholder": "At least 3 characters",
+    "emailPlaceholder": "example{'@'}email.com",
+    "passwordMinLength": "Password must be at least 8 characters",
+    "passwordPlaceholder": "At least 8 characters",
+    "confirmPasswordPlaceholder": "Re-enter password",
+    "usernameOrEmailPlaceholder": "Enter username or email",
+    "passwordInputPlaceholder": "Enter password",
+    "invalidEmail": "Please enter a valid email address",
+    "passwordMismatch": "Passwords do not match",
+    "registerFailed": "Registration failed, please try again",
+    "loginFailed": "Login failed, please check your username and password",
+    "fillComplete": "Please fill in all fields"
   }
 }

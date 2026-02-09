@@ -34,6 +34,10 @@ interface LazyLoadingState {
   processedSegments: Set<string>;
   /** 段落缓存 */
   segmentCache: Map<string, ContentSegment>;
+  /** 当前观察中的段落 */
+  observedSegments: Map<string, ContentSegment>;
+  /** 失败重试次数 */
+  failedAttempts: Map<string, number>;
 }
 
 /**
@@ -45,7 +49,18 @@ export class LazyLoadingService {
   private processingCallback: LazyLoadingCallback | null = null;
   private state: LazyLoadingState;
   private processingTimer: number | null = null;
+  private reconcileTimer: number | null = null;
+  private processingInFlight = false;
+  private retryTimers = new Set<number>();
+  private scrollHandler = this.handleViewportMutation.bind(this);
+  private resizeHandler = this.handleViewportMutation.bind(this);
   private isDestroyed = false;
+
+  private readonly PROCESS_DEBOUNCE_MS = 60;
+  private readonly RECONCILE_THROTTLE_MS = 120;
+  private readonly PROCESS_BATCH_SIZE = 8;
+  private readonly MAX_RETRY_COUNT = 2;
+  private readonly RETRY_BASE_DELAY_MS = 300;
 
   constructor(config: LazyLoadingConfig) {
     this.config = { ...config };
@@ -55,6 +70,8 @@ export class LazyLoadingService {
       processingQueue: new Set(),
       processedSegments: new Set(),
       segmentCache: new Map(),
+      observedSegments: new Map(),
+      failedAttempts: new Map(),
     };
   }
 
@@ -65,10 +82,17 @@ export class LazyLoadingService {
     if (this.state.initialized) return;
 
     this.state.initialized = true;
-    this.state.enabled = this.config.enabled;
+    this.state.enabled = this.normalizeEnabled(this.config.enabled);
+    this.config = {
+      ...this.config,
+      preloadDistance: this.normalizePreloadDistance(
+        this.config.preloadDistance,
+      ),
+    };
 
-    if (this.config.enabled) {
+    if (this.state.enabled) {
       this.createObserver();
+      this.bindViewportListeners();
     }
   }
 
@@ -76,13 +100,15 @@ export class LazyLoadingService {
    * 创建观察器
    */
   private createObserver(): void {
+    const previouslyObserved = Array.from(this.state.observedSegments.values());
+
     if (this.observer) {
       this.observer.destroy();
     }
 
     const observerCallback: SegmentObserverCallback = (
       visibleSegments,
-      invisibleSegments,
+      _invisibleSegments,
     ) => {
       this.handleVisibilityChange(visibleSegments);
     };
@@ -92,123 +118,224 @@ export class LazyLoadingService {
     };
 
     this.observer = new SegmentObserver(observerCallback, observerOptions);
+
+    if (previouslyObserved.length > 0) {
+      this.observer.observeMultiple(previouslyObserved);
+    }
+
+    this.scheduleReconcile();
   }
 
   /**
    * 处理段落可见性变化
    */
   private handleVisibilityChange(visibleSegments: ContentSegment[]): void {
-    if (!this.state.enabled || this.isDestroyed) return;
-
-    // 处理进入视口的段落
-    if (visibleSegments.length > 0) {
-      this.scheduleProcessing(visibleSegments);
-    }
+    if (!this.state.enabled || this.isDestroyed || visibleSegments.length === 0)
+      return;
+    this.scheduleProcessing(visibleSegments);
   }
 
   /**
-   * 调度处理 - 防止并发问题
+   * 调度处理
    */
   private scheduleProcessing(segments: ContentSegment[]): void {
-    // 过滤已处理的段落
-    const unprocessedSegments = segments.filter(
-      (segment) => !this.state.processedSegments.has(segment.fingerprint),
-    );
+    if (!this.state.enabled || this.isDestroyed) return;
 
-    if (unprocessedSegments.length === 0) return;
+    let hasNewSegment = false;
 
-    // 添加到处理队列和缓存
-    unprocessedSegments.forEach((segment) => {
-      this.state.processingQueue.add(segment.fingerprint);
-      this.state.segmentCache.set(segment.fingerprint, segment);
-    });
+    for (const segment of segments) {
+      if (!this.shouldQueueSegment(segment)) continue;
 
-    // 如果已有定时器在运行，不清除它，让它继续处理
-    if (this.processingTimer) {
-      return;
+      const fingerprint = segment.fingerprint;
+      this.state.processingQueue.add(fingerprint);
+      this.state.segmentCache.set(fingerprint, segment);
+      hasNewSegment = true;
     }
 
-    // 延迟处理，避免频繁触发
-    this.processingTimer = window.setTimeout(() => {
-      this.processAllQueuedSegments();
-    }, 50);
+    if (hasNewSegment) {
+      this.queueProcessingRun();
+    }
   }
 
   /**
-   * 处理队列中的所有段落 - 解决并发跳过问题
+   * 处理队列中的段落（持续排空）
    */
-  private async processAllQueuedSegments(): Promise<void> {
-    if (!this.processingCallback || this.isDestroyed) return;
-
-    const allQueuedFingerprints = Array.from(this.state.processingQueue);
-    if (allQueuedFingerprints.length === 0) {
-      this.processingTimer = null;
+  private async processQueuedSegments(): Promise<void> {
+    if (
+      !this.processingCallback ||
+      this.isDestroyed ||
+      !this.state.enabled ||
+      this.processingInFlight
+    ) {
       return;
     }
 
-    const segmentsToProcess: ContentSegment[] = [];
-    allQueuedFingerprints.forEach((fingerprint) => {
-      const segment = this.state.segmentCache.get(fingerprint);
-      if (segment) {
-        segmentsToProcess.push(segment);
-      }
-    });
-
-    if (segmentsToProcess.length === 0) {
-      this.processingTimer = null;
-      return;
-    }
+    this.processingInFlight = true;
 
     try {
-      // 直接执行，不再等待空闲时间，确保滚动时及时响应
-      // scheduleProcessing 已经有 100ms 的防抖，这里不需要再延迟
-      await this.processingCallback(segmentsToProcess);
+      while (
+        !this.isDestroyed &&
+        this.state.enabled &&
+        this.state.processingQueue.size > 0
+      ) {
+        const fingerprints = Array.from(this.state.processingQueue).slice(
+          0,
+          this.PROCESS_BATCH_SIZE,
+        );
 
-      // 标记为已处理并从缓存中移除
-      segmentsToProcess.forEach((segment) => {
-        this.state.processedSegments.add(segment.fingerprint);
-        this.state.processingQueue.delete(segment.fingerprint);
-        this.state.segmentCache.delete(segment.fingerprint);
+        const batchSegments: ContentSegment[] = [];
+        for (const fingerprint of fingerprints) {
+          this.state.processingQueue.delete(fingerprint);
 
-        // 关键：处理完后停止观察，释放资源
-        if (this.observer) {
-          this.observer.unobserve(segment);
+          const segment = this.state.segmentCache.get(fingerprint);
+          if (!segment || !this.shouldQueueSegment(segment)) {
+            this.cleanupSegmentFromQueue(fingerprint);
+            continue;
+          }
+
+          batchSegments.push(segment);
         }
-      });
-    } catch (_) {
-      // 即使失败也要清理队列，避免重复处理
-      segmentsToProcess.forEach((segment) => {
-        this.state.processingQueue.delete(segment.fingerprint);
-        this.state.segmentCache.delete(segment.fingerprint);
-        // 失败时不停止观察，可能需要重试？或者也停止以免无限重试？
-        // 目前策略：失败也视为已处理（避免死循环），用户需刷新重试
-      });
+
+        if (batchSegments.length === 0) {
+          continue;
+        }
+
+        await this.processBatch(batchSegments);
+      }
     } finally {
-      this.processingTimer = null;
+      this.processingInFlight = false;
+      if (this.state.processingQueue.size > 0) {
+        this.queueProcessingRun();
+      }
     }
+  }
+
+  /**
+   * 批次处理（失败时降级到单条）
+   */
+  private async processBatch(segments: ContentSegment[]): Promise<void> {
+    if (!this.processingCallback || segments.length === 0) return;
+
+    try {
+      await this.processingCallback(segments);
+      segments.forEach((segment) => this.markSegmentProcessed(segment));
+      return;
+    } catch (error) {
+      console.warn('[LazyLoadingService] 批次处理失败，降级为单条重试:', error);
+    }
+
+    for (const segment of segments) {
+      if (!this.processingCallback || this.isDestroyed || !this.state.enabled) {
+        return;
+      }
+
+      try {
+        await this.processingCallback([segment]);
+        this.markSegmentProcessed(segment);
+      } catch (error) {
+        this.handleSegmentFailure(segment, error);
+      }
+    }
+  }
+
+  /**
+   * 标记段落处理完成
+   */
+  private markSegmentProcessed(segment: ContentSegment): void {
+    const fingerprint = segment.fingerprint;
+
+    this.state.processedSegments.add(fingerprint);
+    this.state.failedAttempts.delete(fingerprint);
+    this.state.processingQueue.delete(fingerprint);
+    this.state.segmentCache.delete(fingerprint);
+    this.state.observedSegments.delete(fingerprint);
+
+    if (this.observer) {
+      this.observer.unobserve(segment);
+    }
+  }
+
+  /**
+   * 处理单条失败
+   */
+  private handleSegmentFailure(segment: ContentSegment, error: unknown): void {
+    const fingerprint = segment.fingerprint;
+    const currentRetry = (this.state.failedAttempts.get(fingerprint) ?? 0) + 1;
+    this.state.failedAttempts.set(fingerprint, currentRetry);
+
+    if (currentRetry > this.MAX_RETRY_COUNT) {
+      console.warn('[LazyLoadingService] 段落重试超过上限，跳过本轮:', {
+        fingerprint,
+        error,
+      });
+      this.markSegmentProcessed(segment);
+      return;
+    }
+
+    this.scheduleRetry(segment, currentRetry);
+  }
+
+  /**
+   * 安排重试
+   */
+  private scheduleRetry(segment: ContentSegment, retryCount: number): void {
+    const delay = this.RETRY_BASE_DELAY_MS * retryCount;
+    const fingerprint = segment.fingerprint;
+
+    const timerId = window.setTimeout(() => {
+      this.retryTimers.delete(timerId);
+      if (this.isDestroyed || !this.state.enabled) return;
+      if (!this.state.observedSegments.has(fingerprint)) return;
+      this.scheduleProcessing([segment]);
+    }, delay);
+
+    this.retryTimers.add(timerId);
   }
 
   /**
    * 开始观察段落
    */
   observeSegments(segments: ContentSegment[]): void {
-    if (
-      !this.state.initialized ||
-      !this.state.enabled ||
-      !this.observer ||
-      this.isDestroyed
-    ) {
-      return;
+    if (!this.state.initialized || this.isDestroyed) return;
+
+    for (const segment of segments) {
+      const fingerprint = segment.fingerprint;
+      const previousSegment = this.state.observedSegments.get(fingerprint);
+
+      if (previousSegment && previousSegment.element !== segment.element) {
+        this.observer?.unobserve(previousSegment);
+      }
+
+      this.state.observedSegments.set(fingerprint, segment);
+      this.state.segmentCache.set(fingerprint, segment);
     }
+
+    if (!this.state.enabled || !this.observer) return;
+
     this.observer.observeMultiple(segments);
+    this.scheduleReconcile();
   }
 
   /**
    * 停止观察段落
    */
   unobserveSegments(segments: ContentSegment[]): void {
-    if (!this.observer || this.isDestroyed) return;
-    this.observer.unobserveMultiple(segments);
+    if (this.isDestroyed) return;
+
+    // 兼容旧调用：传空数组表示清理当前会话
+    if (segments.length === 0) {
+      this.clearSession();
+      return;
+    }
+
+    for (const segment of segments) {
+      const fingerprint = segment.fingerprint;
+      this.state.processingQueue.delete(fingerprint);
+      this.state.segmentCache.delete(fingerprint);
+      this.state.observedSegments.delete(fingerprint);
+      this.state.failedAttempts.delete(fingerprint);
+      this.observer?.unobserve(segment);
+    }
   }
 
   /**
@@ -219,41 +346,226 @@ export class LazyLoadingService {
   }
 
   /**
+   * 开启新会话（用于重新触发翻译）
+   */
+  beginSession(): void {
+    if (this.isDestroyed) return;
+    this.clearSession();
+    if (this.state.enabled) {
+      this.createObserver();
+      this.bindViewportListeners();
+    }
+  }
+
+  /**
+   * 清理当前会话
+   */
+  clearSession(): void {
+    if (this.isDestroyed) return;
+    this.stopRuntimeProcessing(true);
+    this.state.processedSegments.clear();
+    this.state.failedAttempts.clear();
+  }
+
+  /**
    * 更新配置
    */
   updateConfig(newConfig: LazyLoadingConfig): void {
     if (this.isDestroyed) return;
 
-    const oldEnabled = this.config.enabled;
-    this.config = { ...newConfig };
+    const normalizedConfig: LazyLoadingConfig = {
+      ...newConfig,
+      enabled: this.normalizeEnabled(newConfig.enabled),
+      preloadDistance: this.normalizePreloadDistance(newConfig.preloadDistance),
+    };
+    const oldEnabled = this.state.enabled;
+    const preloadChanged =
+      this.config.preloadDistance !== normalizedConfig.preloadDistance;
+    this.config = normalizedConfig;
+    this.state.enabled = normalizedConfig.enabled;
 
-    // 如果启用状态发生变化
-    if (oldEnabled !== newConfig.enabled) {
-      this.state.enabled = newConfig.enabled;
-      if (!newConfig.enabled) {
-        this.stopAllObservation();
-      }
+    if (!oldEnabled && this.state.enabled) {
+      this.createObserver();
+      this.bindViewportListeners();
+      this.scheduleReconcile();
+      return;
     }
 
-    // 如果观察器配置发生变化，重新创建观察器
-    if (this.state.initialized && this.observer) {
-      this.createObserver();
+    if (oldEnabled && !this.state.enabled) {
+      this.stopRuntimeProcessing(false);
+      return;
+    }
+
+    if (this.state.enabled && preloadChanged) {
+      if (this.state.initialized) {
+        this.createObserver();
+      }
     }
   }
 
   /**
-   * 停止所有观察
+   * 停止运行时观察和计时器
    */
-  private stopAllObservation(): void {
-    if (this.observer) {
-      this.observer.disconnect();
-    }
+  private stopRuntimeProcessing(clearObserved: boolean): void {
+    this.observer?.disconnect();
+
     this.state.processingQueue.clear();
     this.state.segmentCache.clear();
-    if (this.processingTimer) {
+    if (clearObserved) {
+      this.state.observedSegments.clear();
+    }
+
+    if (this.processingTimer !== null) {
       clearTimeout(this.processingTimer);
       this.processingTimer = null;
     }
+
+    if (this.reconcileTimer !== null) {
+      clearTimeout(this.reconcileTimer);
+      this.reconcileTimer = null;
+    }
+
+    this.clearRetryTimers();
+    this.unbindViewportListeners();
+  }
+
+  /**
+   * 清理队列侧缓存
+   */
+  private cleanupSegmentFromQueue(fingerprint: string): void {
+    this.state.processingQueue.delete(fingerprint);
+    this.state.segmentCache.delete(fingerprint);
+  }
+
+  /**
+   * 判断段落是否可入队
+   */
+  private shouldQueueSegment(segment: ContentSegment): boolean {
+    const fingerprint = segment.fingerprint;
+    if (!fingerprint) return false;
+    if (!(segment.element instanceof Element) || !segment.element.isConnected) {
+      return false;
+    }
+    if (this.state.processedSegments.has(fingerprint)) return false;
+    const retryCount = this.state.failedAttempts.get(fingerprint) ?? 0;
+    return retryCount <= this.MAX_RETRY_COUNT;
+  }
+
+  /**
+   * 视口变化处理（滚动兜底）
+   */
+  private handleViewportMutation(): void {
+    if (!this.state.enabled || this.isDestroyed) return;
+    if (this.reconcileTimer !== null) return;
+
+    this.reconcileTimer = window.setTimeout(() => {
+      this.reconcileTimer = null;
+      this.reconcileVisibleSegments();
+    }, this.RECONCILE_THROTTLE_MS);
+  }
+
+  /**
+   * 触发一次重检
+   */
+  private scheduleReconcile(): void {
+    this.handleViewportMutation();
+  }
+
+  /**
+   * 重检当前可见区域（IO兜底）
+   */
+  private reconcileVisibleSegments(): void {
+    if (!this.state.enabled || this.isDestroyed) return;
+
+    const viewportHeight = window.innerHeight || 0;
+    const preloadPx = Math.max(
+      0,
+      viewportHeight *
+        this.normalizePreloadDistance(this.config.preloadDistance),
+    );
+
+    const visibleSegments: ContentSegment[] = [];
+    for (const [
+      fingerprint,
+      segment,
+    ] of this.state.observedSegments.entries()) {
+      if (!this.shouldQueueSegment(segment)) continue;
+
+      const element = segment.element;
+      if (!(element instanceof Element) || !element.isConnected) {
+        this.state.observedSegments.delete(fingerprint);
+        this.cleanupSegmentFromQueue(fingerprint);
+        this.state.failedAttempts.delete(fingerprint);
+        continue;
+      }
+
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) continue;
+
+      const withinWindow =
+        rect.bottom >= -preloadPx && rect.top <= viewportHeight + preloadPx;
+      if (withinWindow) {
+        visibleSegments.push(segment);
+      }
+    }
+
+    if (visibleSegments.length > 0) {
+      this.scheduleProcessing(visibleSegments);
+    }
+  }
+
+  /**
+   * 安排一次处理循环
+   */
+  private queueProcessingRun(): void {
+    if (this.processingTimer !== null || this.processingInFlight) return;
+    if (this.isDestroyed || !this.state.enabled) return;
+
+    this.processingTimer = window.setTimeout(() => {
+      this.processingTimer = null;
+      void this.processQueuedSegments();
+    }, this.PROCESS_DEBOUNCE_MS);
+  }
+
+  /**
+   * 绑定视口监听器
+   */
+  private bindViewportListeners(): void {
+    window.addEventListener('scroll', this.scrollHandler, { passive: true });
+    window.addEventListener('resize', this.resizeHandler, { passive: true });
+  }
+
+  /**
+   * 解绑视口监听器
+   */
+  private unbindViewportListeners(): void {
+    window.removeEventListener('scroll', this.scrollHandler);
+    window.removeEventListener('resize', this.resizeHandler);
+  }
+
+  /**
+   * 清理重试定时器
+   */
+  private clearRetryTimers(): void {
+    for (const timerId of this.retryTimers) {
+      clearTimeout(timerId);
+    }
+    this.retryTimers.clear();
+  }
+
+  /**
+   * 规范化启用标记
+   */
+  private normalizeEnabled(enabled: boolean): boolean {
+    return Boolean(enabled);
+  }
+
+  /**
+   * 规范化预加载距离
+   */
+  private normalizePreloadDistance(distance: number): number {
+    if (!Number.isFinite(distance)) return 0.5;
+    return Math.min(Math.max(distance, 0), 3);
   }
 
   // 基础状态查询方法
@@ -275,7 +587,9 @@ export class LazyLoadingService {
   destroy(): void {
     if (this.isDestroyed) return;
     this.isDestroyed = true;
-    this.stopAllObservation();
+    this.stopRuntimeProcessing(true);
+    this.state.processedSegments.clear();
+    this.state.failedAttempts.clear();
     if (this.observer) {
       this.observer.destroy();
       this.observer = null;

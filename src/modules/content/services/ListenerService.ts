@@ -8,6 +8,10 @@ import { FloatingBallManager } from '@/src/modules/floatingBall';
 import { IListenerService } from '../types';
 import { isProcessingResultNode, isDescendant } from '../utils/domUtils';
 import { TranslationStateManager } from '../ContentManager';
+import { createModuleLogger } from '../../shared/utils/Report';
+import { DEFAULT_FLOATING_BALL_CONFIG } from '../../shared/constants/defaults';
+
+const logger = createModuleLogger('ListenerService');
 
 /**
  * 监听器服务 - 负责消息监听和DOM观察
@@ -21,6 +25,7 @@ export class ListenerService implements IListenerService {
   private paragraphService: ParagraphTranslationService;
   private floatingBallManager: FloatingBallManager;
   private translationStateManager: TranslationStateManager;
+  private onSettingsUpdated?: (settings: UserSettings) => void;
   private domObserver?: MutationObserver;
   private debounceTimer?: number;
 
@@ -32,6 +37,7 @@ export class ListenerService implements IListenerService {
     textReplacer: TextReplacerService,
     floatingBallManager: FloatingBallManager,
     translationStateManager: TranslationStateManager,
+    onSettingsUpdated?: (settings: UserSettings) => void,
   ) {
     this.settings = settings;
     this.processingService = processingService;
@@ -41,6 +47,7 @@ export class ListenerService implements IListenerService {
     this.paragraphService = ParagraphTranslationService.getInstance();
     this.floatingBallManager = floatingBallManager;
     this.translationStateManager = translationStateManager;
+    this.onSettingsUpdated = onSettingsUpdated;
   }
 
   /**
@@ -94,21 +101,33 @@ export class ListenerService implements IListenerService {
       await this.toggleTranslationState();
     } else if (message.type === 'MANUAL_TRANSLATE') {
       if (this.settings.triggerMode === TriggerMode.MANUAL) {
-        const isConfigValid = await browser.runtime.sendMessage({
-          type: 'validate-configuration',
-          source: 'user_action',
-        });
-        if (isConfigValid) {
+        const isConfigValid = await this.validateConfigForUserAction();
+        if (!isConfigValid) {
+          logger.warn(
+            'Manual translate config check failed, continuing for guest/manual mode',
+          );
+        }
+        try {
           await this.processingService.processPage();
+        } catch (error) {
+          logger.error('Manual translate failed', {
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
     } else if (message.type === 'PARAGRAPH_TRANSLATE') {
-      const isConfigValid = await browser.runtime.sendMessage({
-        type: 'validate-configuration',
-        source: 'user_action',
-      });
-      if (isConfigValid) {
+      const isConfigValid = await this.validateConfigForUserAction();
+      if (!isConfigValid) {
+        logger.warn(
+          'Paragraph translate config check failed, continuing for guest/manual mode',
+        );
+      }
+      try {
         await this.paragraphService.start();
+      } catch (error) {
+        logger.error('Paragraph translate failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   }
@@ -117,13 +136,33 @@ export class ListenerService implements IListenerService {
    * 切换翻译状态
    */
   private async toggleTranslationState(): Promise<void> {
-    const isConfigValid = await browser.runtime.sendMessage({
-      type: 'validate-configuration',
-      source: 'user_action',
-    });
+    const isConfigValid = await this.validateConfigForUserAction();
+    if (!isConfigValid) {
+      logger.warn(
+        'Toggle translation config check failed, continuing for guest/manual mode',
+      );
+    }
 
-    if (isConfigValid) {
+    try {
       await this.translationStateManager.toggleTranslationState();
+    } catch (error) {
+      logger.error('Toggle translation state failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async validateConfigForUserAction(): Promise<boolean> {
+    try {
+      return !!(await browser.runtime.sendMessage({
+        type: 'validate-configuration',
+        source: 'user_action',
+      }));
+    } catch (error) {
+      logger.warn('validate-configuration request failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
     }
   }
 
@@ -149,6 +188,10 @@ export class ListenerService implements IListenerService {
     }
 
     Object.assign(this.settings, newSettings);
+    this.settings.floatingBall = {
+      ...DEFAULT_FLOATING_BALL_CONFIG,
+      ...(this.settings.floatingBall || {}),
+    };
     this.configurationService.updateConfiguration(
       this.settings,
       this.styleManager,
@@ -156,6 +199,7 @@ export class ListenerService implements IListenerService {
     );
     this.processingService.updateSettings(this.settings);
     this.floatingBallManager.updateConfig(this.settings.floatingBall);
+    this.onSettingsUpdated?.(this.settings);
   }
 
   /**

@@ -26,9 +26,9 @@
             <div v-else class="flex items-center gap-2">
               <LoginDialog v-model:open="showLoginDialog">
                 <button
-                  class="flex items-center gap-2 p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
+                  class="px-3 py-1.5 text-sm rounded-md border border-border bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
                 >
-                  <Avatar fallback="未登录" size="sm" />
+                  {{ $t('auth.login') }}
                 </button>
               </LoginDialog>
               <RegisterDialog
@@ -38,7 +38,7 @@
                 <button
                   class="text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  注册
+                  {{ $t('auth.register') }}
                 </button>
               </RegisterDialog>
             </div>
@@ -84,7 +84,6 @@ import { useI18n } from 'vue-i18n';
 import { Sun, Moon } from 'lucide-vue-next';
 import OptionsNavigation from './components/OptionsNavigation.vue';
 import OptionsContent from './components/OptionsContent.vue';
-import { Avatar } from '@/components/ui/avatar';
 import UserProfile from './components/auth/UserProfile.vue';
 import LoginDialog from './components/auth/LoginDialog.vue';
 import RegisterDialog from './components/auth/RegisterDialog.vue';

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import {
   Dialog,
   DialogContent,
@@ -11,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/src/composables/useAuth';
+
+const { t } = useI18n();
 
 interface Props {
   open?: boolean;
@@ -36,23 +39,33 @@ const confirmPassword = ref('');
 const error = ref('');
 const loading = ref(false);
 
+const handleFocusIn = (event: FocusEvent) => {
+  const target = event.target as HTMLElement | null;
+  if (!target || typeof target.scrollIntoView !== 'function') {
+    return;
+  }
+  window.setTimeout(() => {
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, 120);
+};
+
 const emailRegex = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
 
 const validate = () => {
   if (username.value.length < 3) {
-    error.value = '用户名至少需要3个字符';
+    error.value = t('auth.usernameMinLength');
     return false;
   }
   if (!emailRegex.test(email.value)) {
-    error.value = '请输入有效的邮箱地址';
+    error.value = t('auth.invalidEmail');
     return false;
   }
   if (password.value.length < 8) {
-    error.value = '密码至少需要8个字符';
+    error.value = t('auth.passwordMinLength');
     return false;
   }
   if (password.value !== confirmPassword.value) {
-    error.value = '两次输入的密码不一致';
+    error.value = t('auth.passwordMismatch');
     return false;
   }
   return true;
@@ -83,7 +96,7 @@ const handleSubmit = async () => {
     emit('success');
     isOpen.value = false;
   } catch (err: any) {
-    error.value = err.message || '注册失败,请重试';
+    error.value = err.message || t('auth.registerFailed');
   } finally {
     loading.value = false;
   }
@@ -95,50 +108,56 @@ const handleSubmit = async () => {
     <DialogTrigger as-child>
       <slot />
     </DialogTrigger>
-    <DialogContent class="sm:max-w-[425px]">
+    <DialogContent
+      class="sm:max-w-[425px] top-[max(1rem,env(safe-area-inset-top))] -translate-y-0 sm:top-1/2 sm:-translate-y-1/2 max-h-[85dvh] overflow-y-auto pb-[max(1rem,env(safe-area-inset-bottom))]"
+    >
       <DialogHeader>
-        <DialogTitle>注册账号</DialogTitle>
+        <DialogTitle>{{ $t('auth.registerAccount') }}</DialogTitle>
       </DialogHeader>
-      <form @submit.prevent="handleSubmit" class="grid gap-4 py-4">
+      <form
+        @submit.prevent="handleSubmit"
+        @focusin="handleFocusIn"
+        class="grid gap-4 py-4"
+      >
         <div class="grid gap-2">
-          <Label for="username">用户名</Label>
+          <Label for="username">{{ $t('auth.username') }}</Label>
           <Input
             id="username"
             v-model="username"
-            placeholder="至少3个字符"
+            :placeholder="$t('auth.usernamePlaceholder')"
             :disabled="loading"
             required
           />
         </div>
         <div class="grid gap-2">
-          <Label for="email">邮箱</Label>
+          <Label for="email">{{ $t('auth.email') }}</Label>
           <Input
             id="email"
             v-model="email"
             type="email"
-            placeholder="your@email.com"
+            :placeholder="$t('auth.emailPlaceholder')"
             :disabled="loading"
             required
           />
         </div>
         <div class="grid gap-2">
-          <Label for="password">密码</Label>
+          <Label for="password">{{ $t('auth.password') }}</Label>
           <Input
             id="password"
             v-model="password"
             type="password"
-            placeholder="至少8个字符"
+            :placeholder="$t('auth.passwordPlaceholder')"
             :disabled="loading"
             required
           />
         </div>
         <div class="grid gap-2">
-          <Label for="confirm-password">确认密码</Label>
+          <Label for="confirm-password">{{ $t('auth.confirmPassword') }}</Label>
           <Input
             id="confirm-password"
             v-model="confirmPassword"
             type="password"
-            placeholder="再次输入密码"
+            :placeholder="$t('auth.confirmPasswordPlaceholder')"
             :disabled="loading"
             required
           />
@@ -149,7 +168,7 @@ const handleSubmit = async () => {
         </div>
 
         <Button type="submit" :disabled="loading" class="w-full">
-          {{ loading ? '注册中...' : '注册' }}
+          {{ loading ? $t('auth.registering') : $t('auth.register') }}
         </Button>
       </form>
     </DialogContent>

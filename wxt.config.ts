@@ -17,7 +17,7 @@ export default defineConfig({
   modules: ['@wxt-dev/module-vue'],
   manifest: {
     name: 'Side Translation - 浸入式翻译助手',
-    author: 'xiao1932794922@gmail.com' as any, // Firefox requires string, not object (WXT type mismatch)
+    // author: 'xiao1932794922@gmail.com' as any, // Firefox requires string, not object (WXT type mismatch)
     description: `Side Translation turns browsing into language learning. AI uses "i+1" theory, supports 20+ languages.`,
     version,
     // Firefox 增量更新配置

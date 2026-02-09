@@ -1,15 +1,14 @@
 /**
  * Google TTS提供者
- * 使用Google翻译的语音接口提供朗读功能（通过nginx代理）
+ * 使用Google翻译的语音接口提供朗读功能（通过JWT认证代理）
  */
 
 import { ITTSProvider, TTSProviderConfig } from './ITTSProvider';
 import { TTSResult } from '../types';
 import { TIMER_CONSTANTS } from '../../pronunciation/config';
+import { httpClient } from '../../auth/RequestInterceptor';
 
-// Google TTS proxy configuration
-const GOOGLE_TTS_BASE_URL = 'https://translate.planktonfly.com/translate_tts';
-const GOOGLE_TTS_AUTH = 'Basic bXl1c2VyOjEyMzQ1NjY='; // myuser:1234566
+const GOOGLE_TTS_ENDPOINT = '/translate_tts';
 
 export class GoogleTTSProvider implements ITTSProvider {
   readonly name = 'google';
@@ -40,22 +39,24 @@ export class GoogleTTSProvider implements ITTSProvider {
       this.stop();
 
       const finalConfig = { ...this.config, ...config };
-      // Google TTS uses language codes like 'en', 'en-US', 'en-GB'
       const lang = finalConfig.accent === 'uk' ? 'en-GB' : 'en-US';
 
-      // 构建Google TTS代理URL
-      const audioUrl = `${GOOGLE_TTS_BASE_URL}?ie=UTF-8&client=gtx&tl=${lang}&q=${encodeURIComponent(text)}`;
+      const params = new URLSearchParams({
+        ie: 'UTF-8',
+        client: 'gtx',
+        tl: lang,
+        q: text,
+      });
+      const audioUrl = `${GOOGLE_TTS_ENDPOINT}?${params.toString()}`;
 
       console.log(`[DEBUG] Google TTS URL: ${audioUrl}, lang: ${lang}`);
 
-      // 创建音频元素
       const audio = new Audio();
       this.currentAudio = audio;
 
       return new Promise((resolve) => {
         let isResolved = false;
 
-        // 设置超时机制
         const timeout = setTimeout(() => {
           if (!isResolved) {
             isResolved = true;
@@ -65,7 +66,7 @@ export class GoogleTTSProvider implements ITTSProvider {
               error: 'Google语音加载超时',
             });
           }
-        }, TIMER_CONSTANTS.YOUDAO_TIMEOUT); // 复用超时常量
+        }, TIMER_CONSTANTS.YOUDAO_TIMEOUT);
 
         const cleanup = () => {
           clearTimeout(timeout);
@@ -115,21 +116,27 @@ export class GoogleTTSProvider implements ITTSProvider {
           }
         };
 
-        // 使用fetch获取音频(需要认证头)
-        this.fetchAudioWithAuth(audioUrl)
-          .then((blob) => {
-            if (blob) {
+        httpClient
+          .get(audioUrl)
+          .then(async (response) => {
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}`);
+            }
+
+            const blob = await response.blob();
+            if (blob.size > 0) {
               audio.src = URL.createObjectURL(blob);
               audio.load();
-            } else {
-              if (!isResolved) {
-                isResolved = true;
-                cleanup();
-                resolve({
-                  success: false,
-                  error: 'Google语音获取失败',
-                });
-              }
+              return;
+            }
+
+            if (!isResolved) {
+              isResolved = true;
+              cleanup();
+              resolve({
+                success: false,
+                error: 'Google语音获取失败',
+              });
             }
           })
           .catch((error) => {
@@ -149,30 +156,6 @@ export class GoogleTTSProvider implements ITTSProvider {
         success: false,
         error: error instanceof Error ? error.message : '未知错误',
       };
-    }
-  }
-
-  /**
-   * 使用认证头获取音频
-   */
-  private async fetchAudioWithAuth(url: string): Promise<Blob | null> {
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'X-Proxy-Target': 'google',
-          Authorization: GOOGLE_TTS_AUTH,
-        },
-      });
-
-      if (response.ok) {
-        return await response.blob();
-      }
-      console.error(`[GoogleTTS] 请求失败: ${response.status}`);
-      return null;
-    } catch (error) {
-      console.error('[GoogleTTS] 请求异常:', error);
-      return null;
     }
   }
 

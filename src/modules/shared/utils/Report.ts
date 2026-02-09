@@ -27,6 +27,81 @@ interface LogEntry {
   args?: string;
 }
 
+const MAX_ARG_LENGTH = 1200;
+
+function truncate(value: string, max: number = MAX_ARG_LENGTH): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max)}...<truncated>`;
+}
+
+function serializeError(error: Error): Record<string, unknown> {
+  return {
+    type: 'Error',
+    name: error.name,
+    message: error.message,
+    stack: error.stack ? truncate(error.stack, 2000) : undefined,
+  };
+}
+
+function safeStringify(value: unknown): string {
+  const seen = new WeakSet<object>();
+  try {
+    return JSON.stringify(
+      value,
+      (_, v) => {
+        if (v instanceof Error) return serializeError(v);
+        if (typeof v === 'bigint') return v.toString();
+        if (v && typeof v === 'object') {
+          const obj = v as object;
+          if (seen.has(obj)) return '[Circular]';
+          seen.add(obj);
+        }
+        return v;
+      },
+      2,
+    );
+  } catch {
+    return String(value);
+  }
+}
+
+function serializeArg(arg: unknown): string {
+  if (arg instanceof Error) {
+    return truncate(safeStringify(serializeError(arg)));
+  }
+
+  if (arg instanceof Response) {
+    return truncate(
+      safeStringify({
+        type: 'Response',
+        url: arg.url,
+        ok: arg.ok,
+        status: arg.status,
+        statusText: arg.statusText,
+        redirected: arg.redirected,
+      }),
+    );
+  }
+
+  if (arg instanceof Request) {
+    return truncate(
+      safeStringify({
+        type: 'Request',
+        url: arg.url,
+        method: arg.method,
+        mode: arg.mode,
+        credentials: arg.credentials,
+      }),
+    );
+  }
+
+  if (typeof arg === 'object' && arg !== null) {
+    return truncate(safeStringify(arg));
+  }
+
+  return truncate(String(arg));
+}
+
 // WebSocket 连接状态
 let ws: WebSocket | null = null;
 let isConnecting = false;
@@ -46,11 +121,7 @@ function getTimestamp(): string {
  */
 function formatArgs(args: unknown[]): string | undefined {
   if (args.length === 0) return undefined;
-  return args
-    .map((a) =>
-      typeof a === 'object' ? JSON.stringify(a).substring(0, 200) : String(a),
-    )
-    .join(' ');
+  return args.map((a) => serializeArg(a)).join(' ');
 }
 
 /**

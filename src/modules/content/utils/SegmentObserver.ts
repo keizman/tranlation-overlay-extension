@@ -49,7 +49,7 @@ export class SegmentObserver {
     }
 
     try {
-      const preloadDistance = this.options.preloadDistance || 0.5;
+      const preloadDistance = this.options.preloadDistance ?? 0.5;
       const marginPercent = Math.round(preloadDistance * 100);
 
       const observerOptions: IntersectionObserverInit = {
@@ -152,13 +152,12 @@ export class SegmentObserver {
   updateOptions(newOptions: SegmentObserverOptions): void {
     if (this.isDestroyed) return;
 
+    const previousSegments = Array.from(this.segmentMap.values());
     this.options = { ...this.options, ...newOptions };
     this.disconnect();
     this.initializeObserver();
 
-    const segments = Array.from(this.segmentMap.values());
-    this.segmentMap.clear();
-    segments.forEach((segment) => this.observe(segment));
+    previousSegments.forEach((segment) => this.observe(segment));
   }
 
   /**

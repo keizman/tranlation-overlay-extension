@@ -15,9 +15,10 @@ import {
   createIconHTML,
 } from '../components/WordCard';
 import { createModuleLogger } from '../../../shared/utils/Report';
+import { httpClient } from '../../../auth/RequestInterceptor';
 
-// Logger
 const logger = createModuleLogger('WordCard');
+const GOOGLE_TTS_ENDPOINT = '/translate_tts';
 
 // 注入样式
 import '../styles/wordCard.css';
@@ -28,6 +29,8 @@ import '../styles/wordCard.css';
 
 export class WordCardManager {
   private static instance: WordCardManager | null = null;
+  private static readonly TRIGGER_DEDUP_WINDOW_MS = 900;
+  private static readonly TOUCHEND_SUPPRESS_WINDOW_MS = 1200;
 
   private settings: WordCardSettings = DEFAULT_WORD_CARD_SETTINGS;
   private state: WordCardState = {
@@ -55,6 +58,10 @@ export class WordCardManager {
   private dragStartY = 0;
   private cardStartX = 0;
   private cardStartY = 0;
+  private lastTriggerWord = '';
+  private lastTriggerAt = 0;
+  private lastTriggerSource = '';
+  private lastSelectionChangeShowAt = 0;
 
   // ============================================================================
   // 单例
@@ -284,6 +291,44 @@ export class WordCardManager {
     logger.log(`${source}: Should show card for "${info.text}"? ${shouldShow}`);
 
     if (shouldShow) {
+      const normalizedWord = info.text.toLowerCase();
+      const now = Date.now();
+      const isSameWordInWindow =
+        normalizedWord === this.lastTriggerWord &&
+        now - this.lastTriggerAt <= WordCardManager.TRIGGER_DEDUP_WINDOW_MS;
+
+      if (source === 'touchend') {
+        const isSuppressedBySelectionChange =
+          now - this.lastSelectionChangeShowAt <=
+          WordCardManager.TOUCHEND_SUPPRESS_WINDOW_MS;
+        if (isSuppressedBySelectionChange) {
+          logger.log('touchend skipped due to recent selectionchange trigger', {
+            word: info.text,
+            suppressWindowMs: WordCardManager.TOUCHEND_SUPPRESS_WINDOW_MS,
+            sinceSelectionChangeMs: now - this.lastSelectionChangeShowAt,
+          });
+          return;
+        }
+      }
+
+      if (isSameWordInWindow) {
+        logger.log('duplicate trigger skipped', {
+          word: info.text,
+          currentSource: source,
+          lastSource: this.lastTriggerSource,
+          dedupWindowMs: WordCardManager.TRIGGER_DEDUP_WINDOW_MS,
+          elapsedMs: now - this.lastTriggerAt,
+        });
+        return;
+      }
+
+      this.lastTriggerWord = normalizedWord;
+      this.lastTriggerAt = now;
+      this.lastTriggerSource = source;
+      if (source === 'selectionchange') {
+        this.lastSelectionChangeShowAt = now;
+      }
+
       if (this.settings.showExplainIcon) {
         this.showIcon(info.text, {
           x: info.rect.right + 5,
@@ -397,6 +442,10 @@ export class WordCardManager {
 
   public async showCard(word: string, position: CardPosition): Promise<void> {
     logger.log(`Showing card for: ${word}`, { position });
+    logger.log('WordCard query request', {
+      word,
+      apiEndpoint: this.settings.apiEndpoint,
+    });
 
     this.state = {
       ...this.state,
@@ -424,7 +473,18 @@ export class WordCardManager {
         this.speakWord(data.word, 'us');
       }
     } catch (err: any) {
-      console.error('[WordCard] Query failed:', err);
+      logger.error('Query failed', {
+        word,
+        apiEndpoint: this.settings.apiEndpoint,
+        error:
+          err instanceof Error
+            ? {
+                name: err.name,
+                message: err.message,
+                stack: err.stack,
+              }
+            : String(err),
+      });
       this.state = {
         ...this.state,
         loading: false,
@@ -602,24 +662,23 @@ export class WordCardManager {
       }
     }
 
-    // 回退: 使用 Google Translate TTS API
     const langCode = accent === 'us' ? 'en-US' : 'en-GB';
-    const GOOGLE_TTS_BASE_URL =
-      'https://translate.planktonfly.com/translate_tts';
-    const GOOGLE_TTS_AUTH = 'Basic bXl1c2VyOjEyMzQ1NjY=';
-    const ttsUrl = `${GOOGLE_TTS_BASE_URL}?ie=UTF-8&client=gtx&tl=${langCode}&q=${encodeURIComponent(word)}`;
+    const params = new URLSearchParams({
+      ie: 'UTF-8',
+      client: 'gtx',
+      tl: langCode,
+      q: word,
+    });
+    const ttsUrl = `${GOOGLE_TTS_ENDPOINT}?${params.toString()}`;
 
     try {
-      const response = await fetch(ttsUrl, {
-        method: 'GET',
-        headers: {
-          'X-Proxy-Target': 'google',
-          Authorization: GOOGLE_TTS_AUTH,
-        },
-      });
+      const response = await httpClient.get(ttsUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
 
-      if (response.ok) {
-        const blob = await response.blob();
+      const blob = await response.blob();
+      if (blob.size > 0) {
         const blobUrl = URL.createObjectURL(blob);
         const audio = new Audio(blobUrl);
         audio.onended = () => URL.revokeObjectURL(blobUrl);

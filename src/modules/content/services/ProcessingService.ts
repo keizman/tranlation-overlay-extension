@@ -74,6 +74,7 @@ export class ProcessingService implements IProcessingService {
     this.lazyLoadingService!.setProcessingCallback(
       this.processSegmentsLazy.bind(this),
     );
+    this.lazyLoadingService!.beginSession();
     this.lazyLoadingService!.observeSegments(segments);
   }
 

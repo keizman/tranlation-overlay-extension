@@ -13,6 +13,9 @@ import {
 } from '../config';
 import { safeSetInnerHTML } from '@/src/utils';
 import { StorageService } from '../../core/storage';
+import { createModuleLogger } from '../../shared/utils/Report';
+
+const logger = createModuleLogger('FloatingBall');
 
 export class FloatingBallManager {
   private config: FloatingBallConfig;
@@ -103,12 +106,21 @@ export class FloatingBallManager {
    */
   init(onTranslate?: () => void): void {
     this.onTranslateCallback = onTranslate;
+    logger.log('FloatingBall init', {
+      enabled: this.config.enabled,
+      position: this.config.position,
+      opacity: this.config.opacity,
+    });
 
     if (this.config.enabled) {
       this.createBall();
       this.setupEventListeners();
       this.state.isVisible = true;
+      logger.log('FloatingBall initialized and visible');
+      return;
     }
+
+    logger.warn('FloatingBall skipped because it is disabled by config');
   }
 
   /**
@@ -118,6 +130,12 @@ export class FloatingBallManager {
     const wasEnabled = this.config.enabled;
     this.config = config;
     this.state.currentPosition = config.position;
+    logger.log('FloatingBall config updated', {
+      wasEnabled,
+      enabled: config.enabled,
+      position: config.position,
+      opacity: config.opacity,
+    });
 
     if (config.enabled && !wasEnabled) {
       // 从禁用变为启用
@@ -153,7 +171,14 @@ export class FloatingBallManager {
 
     this.updateBallStyle();
     this.createMenu();
+    if (!document.body) {
+      logger.error(
+        'Failed to create floating ball because document.body is missing',
+      );
+      return;
+    }
     document.body.appendChild(this.ballElement);
+    logger.log('FloatingBall DOM attached');
   }
 
   /**
@@ -1337,6 +1362,7 @@ export class FloatingBallManager {
    * 销毁悬浮球（完整资源清理）
    */
   destroy(): void {
+    logger.log('FloatingBall destroy start');
     // 移除悬浮球元素
     if (this.ballElement) {
       this.ballElement.remove();
@@ -1390,5 +1416,6 @@ export class FloatingBallManager {
     this.lastClickTime = 0;
     this.menuItemsEventsBound = false;
     this.onTranslateCallback = undefined;
+    logger.log('FloatingBall destroyed');
   }
 }

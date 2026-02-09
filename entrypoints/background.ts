@@ -122,6 +122,11 @@ export default defineBackground(() => {
         handleContextMenuAction(message, sendResponse);
         return true; // 保持消息通道开放
 
+      case MESSAGE_TYPES.SETTINGS_UPDATED:
+      case MESSAGE_TYPES.API_CONFIG_UPDATED:
+        handleSettingsUpdated(message, sendResponse);
+        return true; // 保持消息通道开放
+
       // 处理更新检查相关消息
       case 'CHECK_UPDATE':
       case 'CLEAR_UPDATE_BADGE':
@@ -275,6 +280,46 @@ export default defineBackground(() => {
           error: {
             message: error instanceof Error ? error.message : '未知错误',
           },
+        });
+      }
+    })();
+  }
+
+  /**
+   * 转发设置更新到标签页内容脚本
+   */
+  function handleSettingsUpdated(
+    message: any,
+    sendResponse: (response: any) => void,
+  ): void {
+    (async () => {
+      try {
+        const tabs = await browser.tabs.query({});
+        let delivered = 0;
+
+        await Promise.all(
+          tabs
+            .filter((tab) => typeof tab.id === 'number')
+            .map(async (tab) => {
+              try {
+                await browser.tabs.sendMessage(tab.id!, message);
+                delivered += 1;
+              } catch {
+                // 忽略没有注入 content script 的页面（如 chrome:// 页面）
+              }
+            }),
+        );
+
+        sendResponse({
+          success: true,
+          delivered,
+          totalTabs: tabs.length,
+        });
+      } catch (error) {
+        console.error('[Background] 设置更新转发失败:', error);
+        sendResponse({
+          success: false,
+          error: error instanceof Error ? error.message : '未知错误',
         });
       }
     })();

@@ -5,10 +5,9 @@
  */
 
 import { WordHighlighter, injectTTSHighlightStyles } from './WordHighlighter';
+import { httpClient } from '../../auth/RequestInterceptor';
 
-// Google TTS 配置
-const GOOGLE_TTS_BASE_URL = 'https://translate.planktonfly.com/translate_tts';
-const GOOGLE_TTS_AUTH = 'Basic bXl1c2VyOjEyMzQ1NjY=';
+const GOOGLE_TTS_ENDPOINT = '/translate_tts';
 
 // ============ 统一调试日志 ============
 // 使用全局 DebugLogger，避免创建重复的 debug 面板
@@ -669,37 +668,34 @@ export class ParagraphTTSService {
    * 加载音频 Blob (原 fetchGoogleAudio)
    */
   private async loadAudioBlob(text: string): Promise<Blob | null> {
-    const url = `${GOOGLE_TTS_BASE_URL}?ie=UTF-8&client=gtx&tl=en&q=${encodeURIComponent(text)}`;
+    const params = new URLSearchParams({
+      ie: 'UTF-8',
+      client: 'gtx',
+      tl: 'en',
+      q: text,
+    });
+    const url = `${GOOGLE_TTS_ENDPOINT}?${params.toString()}`;
     log(
       `fetchGoogleAudio: 文本长度=${text.length}, 前30字="${text.substring(0, 30)}..."`,
     );
 
-    // 检查文本长度限制
     if (text.length > 200) {
       warn(`文本过长(${text.length} 字符)，Google TTS 可能限制 ~200 字符`);
     }
 
     try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'X-Proxy-Target': 'google',
-          Authorization: GOOGLE_TTS_AUTH,
-        },
-      });
+      const response = await httpClient.get(url);
+      if (!response.ok) {
+        error('fetch 失败: HTTP 状态异常', response.status);
+        return null;
+      }
 
-      log('fetch 响应:', response.status, response.statusText);
-
-      if (response.ok) {
-        const blob = await response.blob();
+      const blob = await response.blob();
+      if (blob.size > 0) {
         log('✓ 获取音频成功:', blob.size, 'bytes');
         return blob;
       } else {
-        // 400 错误时打印更多信息
-        const errorText = await response.text().catch(() => '(无法读取)');
-        error(`fetch 失败: ${response.status} ${response.statusText}`);
-        error(`错误响应: ${errorText.substring(0, 100)}`);
-        error(`请求 URL 长度: ${url.length}`);
+        error('fetch 失败: 音频内容为空');
         return null;
       }
     } catch (err: any) {

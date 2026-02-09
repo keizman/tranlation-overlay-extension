@@ -30,6 +30,7 @@ import {
 } from '../listen/floatingBar';
 import { WordCardManager } from '../read/wordCard';
 import { createModuleLogger } from '../shared/utils/Report';
+import { DEFAULT_FLOATING_BALL_CONFIG } from '../shared/constants/defaults';
 
 const logger = createModuleLogger('ContentManager');
 
@@ -259,10 +260,14 @@ export class ContentManager implements IContentManager {
    */
   async init(): Promise<void> {
     try {
+      logger.log('ContentManager init started', {
+        url: window.location.href,
+      });
+
       // 检查网站规则
       const websiteStatus = await this.checkWebsiteStatus();
       if (websiteStatus === 'blacklisted') {
-        console.log('[ContentManager] 网站在黑名单中，跳过初始化');
+        logger.warn('Website is blacklisted, skipping initialization');
         return;
       }
 
@@ -274,8 +279,17 @@ export class ContentManager implements IContentManager {
 
       // 获取用户设置
       this.settings = await this.configurationService.getUserSettings();
+      this.settings.floatingBall = {
+        ...DEFAULT_FLOATING_BALL_CONFIG,
+        ...(this.settings.floatingBall || {}),
+      };
+      logger.log('Settings loaded', {
+        isEnabled: this.settings.isEnabled,
+        triggerMode: this.settings.triggerMode,
+        floatingBallEnabled: this.settings.floatingBall.enabled,
+      });
       if (!this.settings.isEnabled) {
-        console.log('[ContentManager] 扩展已禁用，跳过初始化');
+        logger.warn('Extension disabled by settings, skipping initialization');
         return;
       }
 
@@ -296,8 +310,11 @@ export class ContentManager implements IContentManager {
 
       // 根据触发模式执行初始处理
       await this.handleInitialProcessing(websiteStatus);
+      logger.log('ContentManager init completed');
     } catch (error) {
-      console.error('[ContentManager] 初始化失败:', error);
+      logger.error('ContentManager initialization failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     }
   }
@@ -338,6 +355,13 @@ export class ContentManager implements IContentManager {
       );
     }
 
+    this.updateRuntimeFeatureServices(newSettings);
+  }
+
+  /**
+   * 更新运行时功能服务（无需整页刷新）
+   */
+  private updateRuntimeFeatureServices(newSettings: UserSettings): void {
     // 更新词典卡片设置
     if (this.wordCardManager && newSettings.wordCard) {
       logger.log('Updating WordCard settings', newSettings.wordCard);
@@ -355,6 +379,22 @@ export class ContentManager implements IContentManager {
         hasSettings: !!newSettings.wordCard,
       });
     }
+
+    // 更新手势翻译设置
+    const gestureSettings = {
+      leftSwipe: !!newSettings.gestureTranslation?.leftSwipe,
+      rightSwipe: !!newSettings.gestureTranslation?.rightSwipe,
+    };
+    this.swipeTranslationService?.updateSettings(gestureSettings);
+
+    // 更新段落 TTS 开关
+    if (this.paragraphTTSService) {
+      if (newSettings.paragraphTTS?.enabled ?? true) {
+        this.paragraphTTSService.enable();
+      } else {
+        this.paragraphTTSService.disable();
+      }
+    }
   }
 
   /**
@@ -369,10 +409,19 @@ export class ContentManager implements IContentManager {
    * 验证配置
    */
   private async validateConfiguration(): Promise<void> {
-    await browser.runtime.sendMessage({
-      type: 'validate-configuration',
-      source: 'page_load',
-    });
+    try {
+      const isConfigValid = await browser.runtime.sendMessage({
+        type: 'validate-configuration',
+        source: 'page_load',
+      });
+      if (!isConfigValid) {
+        logger.warn('Configuration validation failed on page load');
+      }
+    } catch (error) {
+      logger.warn('Configuration validation request failed, continuing init', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /**
@@ -498,37 +547,59 @@ export class ContentManager implements IContentManager {
       textReplacer,
       floatingBallManager,
       this.translationStateManager,
+      (updatedSettings) => this.updateRuntimeFeatureServices(updatedSettings),
     );
 
-    // 初始化段落TTS服务（双击朗读 + 高亮）
-    this.paragraphTTSService = new ParagraphTTSService({
-      showDebugPanel: this.settings.showDebugPanel ?? false,
-      enabled: this.settings.paragraphTTS?.enabled ?? true,
-    });
-    this.paragraphTTSService.enable();
-
-    // 初始化滑动翻译服务（左滑翻译/恢复切换）
-    // 直接使用内部逻辑 (Google API + 缓存)
-    this.swipeTranslationService = new SwipeTranslationService();
-    if (
-      this.settings.gestureTranslation?.leftSwipe ||
-      this.settings.gestureTranslation?.rightSwipe
-    ) {
-      this.swipeTranslationService.enable();
+    try {
+      // 初始化段落TTS服务（双击朗读 + 高亮）
+      this.paragraphTTSService = new ParagraphTTSService({
+        showDebugPanel: this.settings.showDebugPanel ?? false,
+        enabled: this.settings.paragraphTTS?.enabled ?? true,
+      });
+      this.paragraphTTSService.enable();
+    } catch (error) {
+      logger.error('ParagraphTTS init failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-    console.log('[ContentManager] 滑动翻译服务已初始化');
 
-    // 初始化全文TTS底栏
-    const ttsBarManager = getFullTextTTSBarManager();
-    await ttsBarManager.init(optimizedSettings);
+    try {
+      // 初始化滑动翻译服务（左滑翻译/恢复切换）
+      this.swipeTranslationService = new SwipeTranslationService();
+      this.swipeTranslationService.updateSettings({
+        leftSwipe: !!this.settings.gestureTranslation?.leftSwipe,
+        rightSwipe: !!this.settings.gestureTranslation?.rightSwipe,
+      });
+      logger.log('Swipe translation service initialized');
+    } catch (error) {
+      logger.error('Swipe translation service init failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
-    // 初始化词典卡片管理器
-    if (this.settings.wordCard) {
-      this.wordCardManager = WordCardManager.getInstance();
-      this.wordCardManager.init(this.settings.wordCard);
-      logger.log('WordCard initialized', this.settings.wordCard);
-    } else {
-      logger.log('WordCard settings missing in init');
+    try {
+      // 初始化全文TTS底栏
+      const ttsBarManager = getFullTextTTSBarManager();
+      await ttsBarManager.init(optimizedSettings);
+    } catch (error) {
+      logger.error('Full text TTS bar init failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    try {
+      // 初始化词典卡片管理器
+      if (this.settings.wordCard) {
+        this.wordCardManager = WordCardManager.getInstance();
+        this.wordCardManager.init(this.settings.wordCard);
+        logger.log('WordCard initialized', this.settings.wordCard);
+      } else {
+        logger.log('WordCard settings missing in init');
+      }
+    } catch (error) {
+      logger.error('WordCard init failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -572,15 +643,33 @@ export class ContentManager implements IContentManager {
 
     await this.services.floatingBallManager.init(async () => {
       // 悬浮球点击状态切换回调
-      const isConfigValid = await browser.runtime.sendMessage({
-        type: 'validate-configuration',
-        source: 'user_action',
-      });
+      try {
+        const isConfigValid = await browser.runtime.sendMessage({
+          type: 'validate-configuration',
+          source: 'user_action',
+        });
+        if (!isConfigValid) {
+          logger.warn(
+            'User action config validation failed, continue for guest/manual mode',
+          );
+        }
+      } catch (error) {
+        logger.warn('User action config validation request failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
 
-      if (isConfigValid && this.translationStateManager) {
-        await this.translationStateManager.toggleTranslationState();
+      if (this.translationStateManager) {
+        try {
+          await this.translationStateManager.toggleTranslationState();
+        } catch (error) {
+          logger.error('Toggle translation state failed from floating ball', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     });
+    logger.log('Floating ball initialized');
   }
 
   /**

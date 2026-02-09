@@ -1,5 +1,6 @@
 import { AuthConfig } from './config';
 import { generateInitSalt } from './crypto';
+import { createModuleLogger } from '../shared/utils/Report';
 
 interface TokenPayload {
   token: string;
@@ -13,6 +14,10 @@ interface AuthTokenResponse {
   expires_in: number;
   check_interval: number;
 }
+
+type AuthRefreshError = Error & {
+  status?: number;
+};
 
 class AuthManager {
   private state: TokenPayload | null = null;
@@ -49,7 +54,7 @@ class AuthManager {
       this.state.expiryTime - AuthConfig.tokenRefreshThreshold * 1000
     ) {
       this.refreshToken().catch((err) => {
-        console.warn('Background token refresh failed:', err);
+        logger.warn('Background token refresh failed', err);
       });
     }
 
@@ -61,13 +66,57 @@ class AuthManager {
       return this.refreshPromise;
     }
 
-    this.refreshPromise = this._doRefresh(forceNew);
+    this.refreshPromise = this._doRefreshWithFallback(forceNew);
 
     try {
       return await this.refreshPromise;
     } finally {
       this.refreshPromise = null;
     }
+  }
+
+  private async _doRefreshWithFallback(
+    forceNew: boolean,
+  ): Promise<TokenPayload> {
+    try {
+      return await this._doRefresh(forceNew);
+    } catch (error) {
+      if (!this.shouldFallbackToForceNew(error, forceNew)) {
+        throw error;
+      }
+
+      logger.warn('token_refresh_fallback_start', {
+        reason: 'token_revoked_or_expired',
+        strategy: 'retry_with_init_salt',
+      });
+
+      try {
+        const result = await this._doRefresh(true);
+        logger.log('token_refresh_fallback_success', {
+          strategy: 'retry_with_init_salt',
+        });
+        return result;
+      } catch (fallbackError) {
+        logger.error('token_refresh_fallback_failed', {
+          strategy: 'retry_with_init_salt',
+          error:
+            fallbackError instanceof Error
+              ? fallbackError.message
+              : String(fallbackError),
+        });
+        throw fallbackError;
+      }
+    }
+  }
+
+  private shouldFallbackToForceNew(error: unknown, forceNew: boolean): boolean {
+    if (forceNew) return false;
+    if (!this.state?.token) return false;
+    if (!(error instanceof Error)) return false;
+
+    const authError = error as AuthRefreshError;
+    const isRevokedMessage = /token revoked or expired/i.test(error.message);
+    return authError.status === 401 && isRevokedMessage;
   }
 
   private async _doRefresh(forceNew: boolean): Promise<TokenPayload> {
@@ -98,14 +147,46 @@ class AuthManager {
       );
     }
 
+    logger.log('Refreshing token', {
+      endpoint: AuthConfig.authEndpoint,
+      extensionId,
+      extensionVersion,
+      hasTempId: !!tempId,
+      forceNew,
+      hasOldToken: !!(this.state?.token && !forceNew),
+      hasUserId: !!userId,
+    });
+
     const response = await fetch(AuthConfig.authEndpoint, {
       method: 'POST',
       headers,
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || `Auth failed: ${response.status}`);
+      const rawBody = await response.text().catch(() => '');
+      let errorMessage = `Auth failed: ${response.status}`;
+      try {
+        const errorData = JSON.parse(rawBody);
+        errorMessage = errorData.error || errorMessage;
+      } catch {
+        if (rawBody) {
+          errorMessage = rawBody.slice(0, 200);
+        }
+      }
+      logger.error('Token refresh failed', {
+        endpoint: AuthConfig.authEndpoint,
+        extensionId,
+        extensionVersion,
+        hasTempId: !!tempId,
+        hasUserId: !!userId,
+        status: response.status,
+        statusText: response.statusText,
+        message: errorMessage,
+        bodySnippet: rawBody.slice(0, 500),
+      });
+      const authError: AuthRefreshError = new Error(errorMessage);
+      authError.status = response.status;
+      throw authError;
     }
 
     const data: AuthTokenResponse = await response.json();
@@ -118,6 +199,11 @@ class AuthManager {
     };
 
     await chrome.storage.local.set({ authState: this.state });
+    logger.log('Token refresh succeeded', {
+      expiresInSeconds: data.expires_in,
+      checkInterval: data.check_interval,
+      hasUserId: !!userId,
+    });
 
     return this.state;
   }
@@ -139,9 +225,9 @@ class AuthManager {
     if (now >= this.state.expiryTime - threshold) {
       try {
         await this.refreshToken();
-        console.log('Token refreshed by alarm');
+        logger.log('Token refreshed by alarm');
       } catch (err) {
-        console.error('Alarm token refresh failed:', err);
+        logger.error('Alarm token refresh failed', err);
       }
     }
   }
@@ -174,4 +260,5 @@ class AuthManager {
   }
 }
 
+const logger = createModuleLogger('AuthManager');
 export const authManager = new AuthManager();

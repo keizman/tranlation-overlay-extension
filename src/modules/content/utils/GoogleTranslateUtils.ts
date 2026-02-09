@@ -3,9 +3,9 @@
  * Handles fetching translations from the private Google Translate API.
  */
 
-const GOOGLE_TRANSLATE_API_BASE =
-  'https://translate.planktonfly.com/translate_a/single';
-const GOOGLE_API_AUTH = 'Basic bXl1c2VyOjEyMzQ1NjY=';
+import { httpClient } from '../../auth/RequestInterceptor';
+
+const GOOGLE_TRANSLATE_ENDPOINT = '/translate_a/single';
 
 interface GoogleTranslateResult {
   originalText: string;
@@ -24,7 +24,6 @@ export async function fetchGoogleTranslation(
   text: string,
   targetLang: string = 'zh-CN',
 ): Promise<GoogleTranslateResult> {
-  // Construct URL parameters
   const params = new URLSearchParams({
     client: 'gtx',
     sl: 'auto',
@@ -33,27 +32,17 @@ export async function fetchGoogleTranslation(
     q: text,
   });
 
-  const url = `${GOOGLE_TRANSLATE_API_BASE}?${params.toString()}`;
+  const url = `${GOOGLE_TRANSLATE_ENDPOINT}?${params.toString()}`;
 
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: GOOGLE_API_AUTH,
-        'X-Proxy-Target': 'google', // If needed by the proxy, though the user said it uses the same auth method as TTS
-      },
-    });
+    const response = await httpClient.get(url);
 
-    if (!response.ok) {
-      throw new Error(
-        `Google Translate API Error: ${response.status} ${response.statusText}`,
-      );
+    if (!response) {
+      throw new Error('Google Translate API Error: httpClient returned null');
     }
 
     const data = await response.json();
 
-    // Parse response
-    // Typical structure: [[["Translated", "Original", ...], ...], ...]
     if (Array.isArray(data) && Array.isArray(data[0])) {
       const segments = data[0];
       let translatedText = '';
@@ -67,7 +56,6 @@ export async function fetchGoogleTranslation(
       return {
         originalText: text,
         translatedText: translatedText,
-        // data[2] usually contains the detected language code string like 'en'
         detectedLanguage: data[2],
       };
     }
