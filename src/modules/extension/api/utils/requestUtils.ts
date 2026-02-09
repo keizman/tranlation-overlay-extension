@@ -4,6 +4,13 @@
 
 import { ApiConfig } from '../../../shared/types/api';
 import { BackgroundProxyResponse } from '../types';
+import { createModuleLogger } from '../../../shared/utils/Report';
+
+const logger = createModuleLogger('ChatApiRequest');
+
+function shouldTraceChatRequest(apiEndpoint: string): boolean {
+  return apiEndpoint.includes('/v1/chat/completions');
+}
 
 /**
  * 发送API请求（支持后台代理）
@@ -28,6 +35,8 @@ async function sendDirectRequest(
   apiConfig: ApiConfig,
   timeout: number,
 ): Promise<Response> {
+  const traceChat = shouldTraceChatRequest(apiConfig.apiEndpoint);
+
   // 构建请求头
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -59,7 +68,41 @@ async function sendDirectRequest(
     fetchOptions.signal = AbortSignal.timeout(timeout);
   }
 
-  return fetch(apiConfig.apiEndpoint, fetchOptions);
+  if (traceChat) {
+    logger.log('Chat request start', {
+      endpoint: apiConfig.apiEndpoint,
+      timeout,
+      hasBusinessAuthorization: !!headers.Authorization,
+      hasSiteAuth: !!headers.site_auth,
+      hasSiteApi: !!headers.site_api,
+    });
+  }
+
+  const response = await fetch(apiConfig.apiEndpoint, fetchOptions);
+
+  if (traceChat) {
+    if (response.ok) {
+      logger.log('Chat request success', {
+        endpoint: apiConfig.apiEndpoint,
+        status: response.status,
+        statusText: response.statusText,
+      });
+    } else {
+      const bodySnippet = await response
+        .clone()
+        .text()
+        .then((text) => text.slice(0, 500))
+        .catch(() => '');
+      logger.error('Chat request failed', {
+        endpoint: apiConfig.apiEndpoint,
+        status: response.status,
+        statusText: response.statusText,
+        bodySnippet,
+      });
+    }
+  }
+
+  return response;
 }
 
 /**
@@ -70,6 +113,8 @@ async function sendViaBackground(
   apiConfig: ApiConfig,
   timeout: number,
 ): Promise<Response> {
+  const traceChat = shouldTraceChatRequest(apiConfig.apiEndpoint);
+
   // 构建请求头
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -91,6 +136,16 @@ async function sendViaBackground(
     }
   }
 
+  if (traceChat) {
+    logger.log('Chat request start (background)', {
+      endpoint: apiConfig.apiEndpoint,
+      timeout,
+      hasBusinessAuthorization: !!headers.Authorization,
+      hasSiteAuth: !!headers.site_auth,
+      hasSiteApi: !!headers.site_api,
+    });
+  }
+
   return new Promise((resolve) => {
     browser.runtime.sendMessage(
       {
@@ -105,6 +160,11 @@ async function sendViaBackground(
       },
       (response: BackgroundProxyResponse) => {
         if (response.success) {
+          if (traceChat) {
+            logger.log('Chat request success (background)', {
+              endpoint: apiConfig.apiEndpoint,
+            });
+          }
           const mockResponse = {
             ok: true,
             status: 200,
@@ -113,6 +173,14 @@ async function sendViaBackground(
           } as Response;
           resolve(mockResponse);
         } else {
+          if (traceChat) {
+            logger.error('Chat request failed (background)', {
+              endpoint: apiConfig.apiEndpoint,
+              status: response.error?.status || 500,
+              statusText: response.error?.statusText || 'Internal Server Error',
+              error: response.error || null,
+            });
+          }
           const mockResponse = {
             ok: false,
             status: response.error?.status || 500,

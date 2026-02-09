@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue';
 import { cn } from '@/lib/utils';
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 interface Props {
   src?: string;
@@ -14,6 +14,15 @@ const props = withDefaults(defineProps<Props>(), {
   size: 'md',
   fallback: '',
 });
+
+const hasImageError = ref(false);
+
+watch(
+  () => props.src,
+  () => {
+    hasImageError.value = false;
+  },
+);
 
 const sizeClasses = {
   sm: 'h-8 w-8 text-xs',
@@ -44,10 +53,11 @@ const initials = computed(() => {
     "
   >
     <img
-      v-if="src"
+      v-if="src && !hasImageError"
       :src="src"
       :alt="fallback"
       class="h-full w-full object-cover"
+      @error="hasImageError = true"
     />
     <span v-else class="font-medium text-muted-foreground">
       {{ initials }}

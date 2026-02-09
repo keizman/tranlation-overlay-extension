@@ -23,6 +23,7 @@ class AuthManager {
   private state: TokenPayload | null = null;
   private refreshPromise: Promise<TokenPayload> | null = null;
   private initialized = false;
+  private hasAlarmCapability = false;
 
   async init(): Promise<void> {
     if (this.initialized) return;
@@ -38,6 +39,7 @@ class AuthManager {
       await chrome.storage.local.set({ tempId });
     }
 
+    this.hasAlarmCapability = this.canUseAlarmApi();
     this.initialized = true;
     this.startCheckLoop();
   }
@@ -209,9 +211,18 @@ class AuthManager {
   }
 
   startCheckLoop(): void {
-    chrome.alarms.create('tokenCheck', {
-      periodInMinutes: AuthConfig.tokenCheckInterval / 60,
-    });
+    if (!this.hasAlarmCapability) {
+      logger.log('Alarm API unavailable in current context, skip tokenCheck');
+      return;
+    }
+
+    try {
+      chrome.alarms.create('tokenCheck', {
+        periodInMinutes: AuthConfig.tokenCheckInterval / 60,
+      });
+    } catch (error) {
+      logger.warn('Failed to create tokenCheck alarm', error);
+    }
   }
 
   async handleAlarm(): Promise<void> {
@@ -256,6 +267,18 @@ class AuthManager {
 
     if (now >= this.state.expiryTime - threshold) {
       await this.refreshToken();
+    }
+  }
+
+  private canUseAlarmApi(): boolean {
+    try {
+      return (
+        typeof chrome !== 'undefined' &&
+        !!chrome.alarms &&
+        typeof chrome.alarms.create === 'function'
+      );
+    } catch {
+      return false;
     }
   }
 }

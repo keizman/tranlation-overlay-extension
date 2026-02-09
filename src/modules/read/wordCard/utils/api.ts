@@ -4,6 +4,7 @@
 
 import type { DictionaryResponse } from '../types';
 import { createModuleLogger } from '../../../shared/utils/Report';
+import { httpClient } from '../../../auth/RequestInterceptor';
 
 const logger = createModuleLogger('WordCardAPI');
 const IN_FLIGHT_REQUESTS = new Map<string, Promise<DictionaryResponse>>();
@@ -61,7 +62,7 @@ export async function queryWord(
       requestUrl: url,
     });
 
-    const response = await fetch(url, {
+    const response = await httpClient.get(url, {
       method: 'GET',
       headers: {
         Accept: 'application/json',
@@ -134,8 +135,7 @@ export async function queryWord(
  */
 export async function checkApiHealth(apiEndpoint: string): Promise<boolean> {
   try {
-    const response = await fetch(`${apiEndpoint}/health`, {
-      method: 'GET',
+    const response = await httpClient.get(`${apiEndpoint}/health`, {
       signal: AbortSignal.timeout(5000),
     });
     logger.log('Health check result', {
