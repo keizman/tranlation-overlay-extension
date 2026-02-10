@@ -12,11 +12,18 @@ export interface SwipeConfig {
   swipeDirection: 'left' | 'right'; // 滑动方向
 }
 
+interface SwipeSettings {
+  leftSwipe: boolean;
+  rightSwipe: boolean;
+  nativeLanguage?: string;
+}
+
 const DEFAULT_SWIPE_CONFIG: SwipeConfig = {
   minSwipeDistance: 80,
   maxSwipeTime: 500,
   swipeDirection: 'left', // 默认为左滑
 };
+const DEFAULT_TARGET_LANGUAGE = 'zh-CN';
 
 // 标记已翻译的元素属性
 const TRANSLATED_ATTR = 'data-wxt-swipe-translated';
@@ -27,6 +34,7 @@ const _CACHE_KEY_ATTR = 'data-wxt-cache-key';
 export class SwipeTranslationService {
   private config: SwipeConfig;
   private isEnabled: boolean = false;
+  private targetLanguage: string = DEFAULT_TARGET_LANGUAGE;
   private touchStartX: number = 0;
   private touchStartY: number = 0;
   private touchStartTime: number = 0;
@@ -83,7 +91,9 @@ export class SwipeTranslationService {
   /**
    * 更新配置 (包括右滑设置)
    */
-  updateSettings(settings: { leftSwipe: boolean; rightSwipe: boolean }): void {
+  updateSettings(settings: SwipeSettings): void {
+    this.targetLanguage = this.resolveTargetLanguage(settings.nativeLanguage);
+
     // 只要开启其中一个，就启用服务监听
     if (settings.leftSwipe || settings.rightSwipe) {
       (this.config as any).leftSwipe = settings.leftSwipe;
@@ -215,12 +225,11 @@ export class SwipeTranslationService {
    * 执行翻译 (带缓存)
    */
   private async performTranslation(element: HTMLElement): Promise<void> {
-    const originalText = element.innerText.trim();
-    if (!originalText) return;
+    const sourceText = this.extractSourceText(element);
+    if (!sourceText) return;
 
-    // 生成简单的缓存键 (使用文本内容)
-    // 简单起见，直接用文本作为键。如果文本太长，可以截取
-    const cacheKey = originalText;
+    // 生成缓存键（包含目标语，避免切换母语后命中旧缓存）
+    const cacheKey = `${this.targetLanguage}::${sourceText}`;
 
     // 添加视觉反馈 (半透明或加载中样式)
     element.style.opacity = '0.6';
@@ -236,7 +245,10 @@ export class SwipeTranslationService {
       } else {
         // 2. 调用 Google API
         console.log('[SwipeTranslation] 请求 Google API...');
-        const result = await fetchGoogleTranslation(originalText);
+        const result = await fetchGoogleTranslation(
+          sourceText,
+          this.targetLanguage,
+        );
         translatedText = result.translatedText;
         // 写入缓存
         this.translationCache.set(cacheKey, translatedText);
@@ -250,6 +262,51 @@ export class SwipeTranslationService {
     } finally {
       element.style.opacity = '1';
     }
+  }
+
+  /**
+   * 提取用于左滑翻译的原始文本
+   * 过滤扩展注入的翻译渲染节点，避免 "(...)" 内容回流到输入
+   */
+  private extractSourceText(element: HTMLElement): string {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const parts: string[] = [];
+
+    let textNode = walker.nextNode();
+    while (textNode) {
+      if (!this.shouldSkipTextNode(textNode)) {
+        parts.push(textNode.textContent || '');
+      }
+      textNode = walker.nextNode();
+    }
+
+    return parts.join('').replace(/\s+/g, ' ').trim();
+  }
+
+  /**
+   * 判断文本节点是否属于扩展注入的翻译渲染节点
+   */
+  private shouldSkipTextNode(textNode: Node): boolean {
+    const parent = textNode.parentElement;
+    if (!parent) return false;
+
+    if (parent.closest('script,style,noscript,template')) return true;
+    if (parent.closest('.wxt-translation-term')) return true;
+    if (parent.closest(`.${this.TRANSLATION_CONTAINER_CLASS}`)) return true;
+    if (parent.closest('.illa-paragraph-translation')) return true;
+    if (parent.closest('[data-translation]')) return true;
+
+    return false;
+  }
+
+  /**
+   * 规范化目标语代码（左滑固定翻译到母语）
+   */
+  private resolveTargetLanguage(nativeLanguage?: string): string {
+    const normalized = nativeLanguage?.trim().toLowerCase();
+    if (!normalized) return DEFAULT_TARGET_LANGUAGE;
+    if (normalized === 'zh') return 'zh-CN';
+    return nativeLanguage!.trim();
   }
 
   /**

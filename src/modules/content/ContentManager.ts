@@ -387,6 +387,7 @@ export class ContentManager implements IContentManager {
     const gestureSettings = {
       leftSwipe: !!newSettings.gestureTranslation?.leftSwipe,
       rightSwipe: !!newSettings.gestureTranslation?.rightSwipe,
+      nativeLanguage: newSettings.multilingualConfig.nativeLanguage,
     };
     this.swipeTranslationService?.updateSettings(gestureSettings);
 
@@ -572,6 +573,7 @@ export class ContentManager implements IContentManager {
       this.swipeTranslationService.updateSettings({
         leftSwipe: !!this.settings.gestureTranslation?.leftSwipe,
         rightSwipe: !!this.settings.gestureTranslation?.rightSwipe,
+        nativeLanguage: this.settings.multilingualConfig.nativeLanguage,
       });
       logger.log('Swipe translation service initialized');
     } catch (error) {

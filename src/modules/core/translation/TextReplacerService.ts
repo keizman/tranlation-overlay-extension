@@ -172,9 +172,9 @@ export class TextReplacerService {
    * 构建API调用的用户设置
    */
   private buildUserSettings(baseSettings: UserSettings): UserSettings {
-    // 动态确定翻译目标语言
+    // 词级翻译固定优先使用母语作为目标语，满足“任意语言 -> 母语”
     const optimizedTargetLanguage =
-      this.languageRoutingService.determineOptimalTargetLanguage(baseSettings);
+      this.resolveWordTranslationTargetLanguage(baseSettings);
 
     return {
       ...baseSettings,
@@ -187,6 +187,24 @@ export class TextReplacerService {
         targetLanguage: optimizedTargetLanguage,
       },
     };
+  }
+
+  /**
+   * 解析词级翻译目标语言
+   * 优先母语，母语缺失时回退到现有路由策略
+   */
+  private resolveWordTranslationTargetLanguage(
+    baseSettings: UserSettings,
+  ): string {
+    const nativeLanguage = baseSettings.multilingualConfig.nativeLanguage
+      ?.trim()
+      .toLowerCase();
+    if (nativeLanguage) {
+      return nativeLanguage;
+    }
+    return this.languageRoutingService.determineOptimalTargetLanguage(
+      baseSettings,
+    );
   }
 
   /**
