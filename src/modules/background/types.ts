@@ -55,6 +55,11 @@ export interface ManualTranslateMessage {
   type: 'MANUAL_TRANSLATE';
 }
 
+export interface SetSelectionBannerDisabledMessage {
+  type: 'SET_SELECTION_BANNER_DISABLED';
+  disabled: boolean;
+}
+
 export type BackgroundMessage =
   | ShowNotificationMessage
   | OpenPopupMessage
@@ -64,7 +69,8 @@ export type BackgroundMessage =
   | TranslatePageMessage
   | SettingsUpdatedMessage
   | ApiConfigUpdatedMessage
-  | ManualTranslateMessage;
+  | ManualTranslateMessage
+  | SetSelectionBannerDisabledMessage;
 
 // ================================
 // API 响应类型定义
@@ -253,6 +259,7 @@ export const MESSAGE_TYPES = {
   SETTINGS_UPDATED: 'settings_updated',
   API_CONFIG_UPDATED: 'api_config_updated',
   MANUAL_TRANSLATE: 'MANUAL_TRANSLATE',
+  SET_SELECTION_BANNER_DISABLED: 'SET_SELECTION_BANNER_DISABLED',
 } as const;
 
 export const EXTENSION_COMMANDS = {

@@ -85,6 +85,8 @@ export interface UserSettings {
   paragraphTTS: ParagraphTTSSettings;
   // 新增：手势翻译设置
   gestureTranslation: GestureTranslationSettings;
+  // App 专属：是否禁用 Android 系统文本选择菜单横幅（Copy/Search/...）
+  disableSystemSelectionBanner: boolean;
 }
 
 // 词典卡片设置接口

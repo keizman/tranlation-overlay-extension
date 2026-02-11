@@ -9,6 +9,7 @@ Follow this to avoid breaking the core/adapter boundaries.
 - Platform API calls go to `adapters/<platform>`.
 - Glue code goes to `bootstrap`.
 - If unsure, add a port first and keep business logic out of adapters.
+- App-host specific bridge controls can live in `adapters/app` only when they are optional and failure-safe.
 
 ## Change Workflow
 

@@ -25,6 +25,24 @@
           />
         </div>
 
+        <div
+          class="flex items-center justify-between border-t border-border pt-6"
+        >
+          <div class="space-y-1">
+            <Label for="disable-system-selection-banner">
+              {{ $t('basicSettings.disableSystemSelectionBanner') }}
+            </Label>
+            <p class="text-xs text-muted-foreground">
+              {{ $t('basicSettings.disableSystemSelectionBannerDescription') }}
+            </p>
+          </div>
+          <Switch
+            id="disable-system-selection-banner"
+            :model-value="settings.disableSystemSelectionBanner"
+            @update:model-value="settings.disableSystemSelectionBanner = $event"
+          />
+        </div>
+
         <!-- 界面语言设置 -->
         <div class="border-t border-border pt-6">
           <div class="space-y-1">
@@ -495,6 +513,7 @@ import { useI18n } from 'vue-i18n';
 import { StorageService } from '@/src/modules/core/storage';
 import { StyleManager } from '@/src/modules/styles';
 import { LanguageService } from '@/src/modules/core/translation/LanguageService';
+import { AndroidAppNativeControlAdapter } from '@/src/modules/architecture/adapters/app';
 import { SUPPORTED_LOCALES, LOCALE_NAMES, setLocale } from '@/src/i18n';
 import {
   UserSettings,
@@ -525,6 +544,7 @@ const settings = ref<UserSettings>(DEFAULT_SETTINGS);
 const currentLocale = ref(locale.value);
 const supportedLocales = SUPPORTED_LOCALES;
 const storageService = StorageService.getInstance();
+const appNativeControlAdapter = new AndroidAppNativeControlAdapter();
 
 const getLocaleName = (locale: string) => {
   return LOCALE_NAMES[locale] || locale;
@@ -544,6 +564,46 @@ const languageService = LanguageService.getInstance();
 const emit = defineEmits<{
   saveMessage: [message: string];
 }>();
+
+const cloneUserSettings = (value: UserSettings): UserSettings => {
+  return JSON.parse(JSON.stringify(value)) as UserSettings;
+};
+
+const syncSelectionBannerToggleToApp = async (disabled: boolean) => {
+  try {
+    const directResult =
+      await appNativeControlAdapter.setSystemSelectionBannerDisabled(disabled);
+    console.info('[BasicSettings] Direct native toggle result', {
+      disabled,
+      directResult,
+    });
+
+    if (directResult.ok) {
+      return;
+    }
+  } catch (error) {
+    console.warn('[BasicSettings] Direct native toggle failed', {
+      disabled,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'SET_SELECTION_BANNER_DISABLED',
+      disabled,
+    });
+    console.info('[BasicSettings] App selection banner toggle synced', {
+      disabled,
+      response,
+    });
+  } catch (error) {
+    console.warn('[BasicSettings] Failed to sync app selection banner toggle', {
+      disabled,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+};
 
 // 获取母语选项
 const nativeLanguageOptions = computed(() => {
@@ -598,19 +658,37 @@ const currentStyleClass = computed(() => {
 watch(
   settings,
   async (newSettings) => {
-    await storageService.saveUserSettings(newSettings);
+    const serializableSettings = cloneUserSettings(newSettings);
+
+    await storageService.saveUserSettings(serializableSettings);
     emit('saveMessage', t('settings.save'));
-    styleManager.setTranslationStyle(newSettings.translationStyle);
+    styleManager.setTranslationStyle(serializableSettings.translationStyle);
     // 如果是自定义样式，更新自定义CSS
-    if (newSettings.translationStyle === TranslationStyle.CUSTOM) {
-      styleManager.setCustomCSS(newSettings.customTranslationCSS);
+    if (serializableSettings.translationStyle === TranslationStyle.CUSTOM) {
+      styleManager.setCustomCSS(serializableSettings.customTranslationCSS);
     }
-    browser.runtime.sendMessage({
-      type: 'settings_updated',
-      settings: newSettings,
-    });
+    try {
+      await browser.runtime.sendMessage({
+        type: 'settings_updated',
+        settings: serializableSettings,
+      });
+    } catch (error) {
+      console.warn('[BasicSettings] Failed to send settings_updated', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   },
   { deep: true },
+);
+
+watch(
+  () => settings.value.disableSystemSelectionBanner,
+  async (disabled, previousDisabled) => {
+    if (disabled === previousDisabled) {
+      return;
+    }
+    await syncSelectionBannerToggleToApp(Boolean(disabled));
+  },
 );
 </script>
 

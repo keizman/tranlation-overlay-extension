@@ -151,4 +151,5 @@ export const DEFAULT_SETTINGS: UserSettings = {
     leftSwipe: true,
     rightSwipe: true,
   },
+  disableSystemSelectionBanner: false,
 };

@@ -9,6 +9,7 @@ Windows adapters by replacing only bootstrap wiring.
 - `core/ports`: platform-neutral contracts.
 - `core/services`: business orchestration that depends only on ports.
 - `adapters/browser`: browser implementations for all ports.
+- `adapters/app`: app-specific bridge adapters (non-port, optional capabilities).
 - `bootstrap/defaultAdapters.ts`: current runtime composition root.
 - `bootstrap/serviceFactory.ts`: helper to create services from custom adapters.
 
@@ -34,6 +35,9 @@ Windows adapters by replacing only bootstrap wiring.
   - ports: `core/ports/translating/TranslationGatewayPort.ts`, `core/ports/translating/NetworkPolicyPort.ts`
   - services: `core/services/translating/*`
   - browser adapters: `adapters/browser/translating/*`
+- `app-native controls`
+  - adapter: `adapters/app/AndroidAppNativeControlAdapter.ts`
+  - use case: optional app bridge controls that must never break extension core flows.
 
 ## Guardrails (Do Not Break)
 

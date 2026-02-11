@@ -36,6 +36,7 @@ export default defineConfig({
       'webNavigation',
       'alarms',
       'idle',
+      'nativeMessaging',
     ],
     host_permissions: ['<all_urls>', 'https://api.github.com/*'],
     // commands not fully supported on Firefox Android, but kept for desktop

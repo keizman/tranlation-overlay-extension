@@ -195,6 +195,8 @@
     "title": "基本设置",
     "enableExtension": "启用扩展总开关",
     "enableExtensionDescription": "关闭后，所有翻译功能将停止工作。",
+    "disableSystemSelectionBanner": "禁用 Android 系统文本菜单",
+    "disableSystemSelectionBannerDescription": "若 app 支持，将隐藏长按后的 Copy/Search/... 横幅。即使失败也不会影响扩展功能。",
     "interfaceLanguage": "界面语言",
     "interfaceLanguageDescription": "选择扩展界面的显示语言",
     "selectInterfaceLanguage": "请选择界面语言",

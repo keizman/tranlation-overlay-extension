@@ -195,6 +195,8 @@
     "title": "Basic Settings",
     "enableExtension": "Enable Extension",
     "enableExtensionDescription": "When turned off, all translation features will stop working.",
+    "disableSystemSelectionBanner": "Disable Android system text menu",
+    "disableSystemSelectionBannerDescription": "If supported by the app, hide the long-press Copy/Search/... banner. Failure will not affect extension behavior.",
     "interfaceLanguage": "Interface Language",
     "interfaceLanguageDescription": "Select the display language for the extension's interface.",
     "selectInterfaceLanguage": "Please select an interface language",
