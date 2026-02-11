@@ -15,8 +15,21 @@ import {
 } from '@/src/modules/background/types';
 import { MessageType } from '@/src/modules/core/messaging/types';
 import { authManager } from '@/src/modules/auth';
+import { AndroidAppNativeControlAdapter } from '@/src/modules/architecture/adapters/app';
+import type { UserSettings } from '@/src/modules/shared/types';
 
 export default defineBackground(() => {
+  const USER_SETTINGS_STORAGE_KEY = 'user_settings';
+  const manifest = browser.runtime.getManifest();
+  const extensionVersion = manifest.version;
+  const extensionId = browser.runtime.id;
+
+  console.info('[Background] Extension startup', {
+    version: extensionVersion,
+    extensionId,
+    context: 'service_worker_boot',
+  });
+
   // 服务实例
   const storageService = StorageService.getInstance();
   const notificationService = NotificationService.getInstance();
@@ -24,6 +37,7 @@ export default defineBackground(() => {
   const commandService = CommandService.getInstance();
   const initializationService = InitializationService.getInstance();
   const updateCheckService = UpdateCheckService.getInstance();
+  const appNativeControlAdapter = new AndroidAppNativeControlAdapter();
 
   // 传统管理器已移除 - 统一到InitializationService中管理
 
@@ -44,6 +58,10 @@ export default defineBackground(() => {
       // 初始化运行时事件监听器 (Chrome MV3 Service Worker 每次唤醒都需要)
       // 这确保 contextMenus.onClicked 等事件在 SW 休眠后重新注册
       await initializationService.initializeRuntime();
+
+      // 尝试在启动时同步一次 app 专属系统菜单开关（失败不影响扩展工作）
+      const currentSettings = await storageService.getUserSettings();
+      await syncAppSelectionBannerSetting(currentSettings, 'startup');
 
       console.log('[Background] 所有服务初始化完成');
     } catch (error) {
@@ -76,6 +94,38 @@ export default defineBackground(() => {
   browser.runtime.onStartup.addListener(async () => {
     console.log('[Background] 浏览器启动');
     await authManager.checkAndRefreshIfNeeded();
+  });
+
+  // 兜底同步链路：只要存储里的 user_settings 变化，就同步一次 app 开关状态。
+  // 这样即使 options -> background 的 runtime message 在某些环境下失败，也能保持行为一致。
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'sync' && areaName !== 'local') {
+      return;
+    }
+
+    const settingsChange = changes[USER_SETTINGS_STORAGE_KEY];
+    if (!settingsChange || typeof settingsChange.newValue === 'undefined') {
+      return;
+    }
+
+    const parsedSettings = parseStoredUserSettings(settingsChange.newValue);
+    if (!parsedSettings) {
+      console.warn(
+        '[Background] Failed to parse user_settings from storage change',
+      );
+      return;
+    }
+
+    syncAppSelectionBannerSetting(parsedSettings, 'settings_updated').catch(
+      (error) => {
+        console.warn(
+          '[Background] App selection banner sync failed from storage listener',
+          {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+      },
+    );
   });
 
   chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -126,6 +176,10 @@ export default defineBackground(() => {
       case MESSAGE_TYPES.API_CONFIG_UPDATED:
         handleSettingsUpdated(message, sendResponse);
         return true; // 保持消息通道开放
+
+      case MESSAGE_TYPES.SET_SELECTION_BANNER_DISABLED:
+        handleSetSelectionBannerDisabled(message, sendResponse);
+        return true;
 
       // 处理更新检查相关消息
       case 'CHECK_UPDATE':
@@ -296,6 +350,7 @@ export default defineBackground(() => {
       try {
         const tabs = await browser.tabs.query({});
         let delivered = 0;
+        let appControlResult: unknown = null;
 
         await Promise.all(
           tabs
@@ -310,10 +365,18 @@ export default defineBackground(() => {
             }),
         );
 
+        if (message?.settings) {
+          appControlResult = await syncAppSelectionBannerSetting(
+            message.settings as UserSettings,
+            'settings_updated',
+          );
+        }
+
         sendResponse({
           success: true,
           delivered,
           totalTabs: tabs.length,
+          appControlResult,
         });
       } catch (error) {
         console.error('[Background] 设置更新转发失败:', error);
@@ -323,6 +386,113 @@ export default defineBackground(() => {
         });
       }
     })();
+  }
+
+  function handleSetSelectionBannerDisabled(
+    message: any,
+    sendResponse: (response: any) => void,
+  ): void {
+    (async () => {
+      try {
+        const disabled = !!message?.disabled;
+        const result =
+          await appNativeControlAdapter.setSystemSelectionBannerDisabled(
+            disabled,
+          );
+
+        if (result.ok) {
+          console.log(
+            '[Background] Direct app selection banner toggle synced',
+            {
+              disabled: result.disabled,
+            },
+          );
+        } else {
+          console.warn(
+            '[Background] Direct app selection banner toggle failed',
+            {
+              desiredDisabled: disabled,
+              supported: result.supported,
+              error: result.error,
+            },
+          );
+        }
+
+        sendResponse({
+          success: result.ok,
+          result,
+        });
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        console.warn(
+          '[Background] Direct app selection banner toggle exception',
+          {
+            error: errorMessage,
+          },
+        );
+        sendResponse({
+          success: false,
+          error: errorMessage,
+        });
+      }
+    })();
+  }
+
+  async function syncAppSelectionBannerSetting(
+    settings: UserSettings,
+    source: 'startup' | 'settings_updated',
+  ) {
+    try {
+      const result =
+        await appNativeControlAdapter.setSystemSelectionBannerDisabled(
+          !!settings.disableSystemSelectionBanner,
+        );
+      if (result.ok) {
+        console.log('[Background] App selection banner state synced', {
+          source,
+          disabled: result.disabled,
+        });
+      } else {
+        console.warn('[Background] App selection banner sync skipped/failed', {
+          source,
+          supported: result.supported,
+          error: result.error,
+          desiredDisabled: settings.disableSystemSelectionBanner,
+        });
+      }
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn('[Background] App selection banner sync exception', {
+        source,
+        error: message,
+      });
+      return {
+        ok: false,
+        supported: false,
+        error: message,
+      };
+    }
+  }
+
+  function parseStoredUserSettings(rawValue: unknown): UserSettings | null {
+    try {
+      if (typeof rawValue === 'string') {
+        return JSON.parse(rawValue) as UserSettings;
+      }
+
+      if (rawValue && typeof rawValue === 'object') {
+        return rawValue as UserSettings;
+      }
+
+      return null;
+    } catch (error) {
+      console.warn('[Background] parseStoredUserSettings failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
   }
 
   /**

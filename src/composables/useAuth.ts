@@ -41,6 +41,7 @@ let checkAuthStatePromise: Promise<void> | null = null;
 
 type StorageMap = Record<string, unknown>;
 type RuntimeMessage = Record<string, unknown>;
+type RuntimeResponse = Record<string, unknown> | null | undefined;
 
 function getBrowserApi() {
   return (globalThis as { browser?: typeof browser }).browser;
@@ -124,11 +125,12 @@ async function storageRemove(keys: string | string[]): Promise<void> {
   });
 }
 
-async function runtimeSendMessage(message: RuntimeMessage): Promise<void> {
+async function runtimeSendMessage(
+  message: RuntimeMessage,
+): Promise<RuntimeResponse> {
   const browserApi = getBrowserApi();
   if (browserApi?.runtime?.sendMessage) {
-    await browserApi.runtime.sendMessage(message);
-    return;
+    return (await browserApi.runtime.sendMessage(message)) as RuntimeResponse;
   }
 
   const chromeApi = getChromeApi();
@@ -136,14 +138,14 @@ async function runtimeSendMessage(message: RuntimeMessage): Promise<void> {
     throw new Error('Runtime API unavailable');
   }
 
-  await new Promise<void>((resolve, reject) => {
-    chromeApi.runtime.sendMessage(message, () => {
+  return await new Promise<RuntimeResponse>((resolve, reject) => {
+    chromeApi.runtime.sendMessage(message, (response) => {
       const runtimeError = chromeApi.runtime?.lastError;
       if (runtimeError) {
         reject(new Error(runtimeError.message));
         return;
       }
-      resolve();
+      resolve((response as RuntimeResponse) || null);
     });
   });
 }
@@ -294,6 +296,7 @@ export function useAuth() {
         .clone()
         .json()
         .catch(() => ({}));
+      const resolvedUserId = String(loginData.id || identity).trim();
       const userData: User = {
         username: loginData.name || identity,
         email: identity.includes('@') ? identity : '',
@@ -301,16 +304,22 @@ export function useAuth() {
         avatar: loginData.picture,
       };
 
-      await storageSet({ authUser: userData });
+      await storageSet({ authUser: userData, userId: resolvedUserId });
 
       authState.value.isLoggedIn = true;
       authState.value.user = userData;
 
       try {
-        await runtimeSendMessage({
+        const syncResult = await runtimeSendMessage({
           type: 'LOGIN_SUCCESS',
-          userId: loginData.id || identity,
+          userId: resolvedUserId,
         });
+        if (syncResult?.success === false) {
+          logger.warn('Login sync message returned failure', {
+            user: identity,
+            response: syncResult,
+          });
+        }
       } catch (syncError) {
         logger.warn('Login sync message failed', {
           error:
@@ -337,15 +346,20 @@ export function useAuth() {
 
   const logout = async () => {
     try {
-      await storageRemove('authUser');
+      await storageRemove(['authUser', 'userId']);
 
       authState.value.isLoggedIn = false;
       authState.value.user = null;
 
       try {
-        await runtimeSendMessage({
+        const syncResult = await runtimeSendMessage({
           type: 'LOGOUT',
         });
+        if (syncResult?.success === false) {
+          logger.warn('Logout sync message returned failure', {
+            response: syncResult,
+          });
+        }
       } catch (syncError) {
         logger.warn('Logout sync message failed', {
           error:

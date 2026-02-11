@@ -28,10 +28,26 @@ class AuthManager {
   async init(): Promise<void> {
     if (this.initialized) return;
 
-    const stored = await chrome.storage.local.get(['authState', 'tempId']);
+    const stored = await chrome.storage.local.get([
+      'authState',
+      'tempId',
+      'userId',
+      'authUser',
+    ]);
 
     if (stored.authState) {
       this.state = stored.authState;
+    }
+
+    const normalizedUserId = this.normalizeUserId(stored.userId);
+    if (!normalizedUserId) {
+      const migratedUserId = this.deriveUserIdFromAuthUser(stored.authUser);
+      if (migratedUserId) {
+        await chrome.storage.local.set({ userId: migratedUserId });
+        logger.log('Migrated userId from authUser profile', {
+          migratedUserId,
+        });
+      }
     }
 
     if (!stored.tempId) {
@@ -48,8 +64,18 @@ class AuthManager {
     await this.init();
 
     const now = Date.now();
+    const storedIdentity = await chrome.storage.local.get('userId');
+    const storedUserId = this.normalizeUserId(storedIdentity.userId);
+    const tokenUserId = this.normalizeUserId(this.state?.userId);
+    const identityChanged = !!this.state && storedUserId !== tokenUserId;
 
-    if (!this.state || now >= this.state.expiryTime) {
+    if (identityChanged) {
+      logger.log('Auth identity changed, forcing token refresh', {
+        previousUserId: tokenUserId || null,
+        currentUserId: storedUserId || null,
+      });
+      await this.refreshToken(true);
+    } else if (!this.state || now >= this.state.expiryTime) {
       await this.refreshToken();
     } else if (
       now >=
@@ -124,7 +150,7 @@ class AuthManager {
   private async _doRefresh(forceNew: boolean): Promise<TokenPayload> {
     const stored = await chrome.storage.local.get(['tempId', 'userId']);
     const tempId = stored.tempId;
-    const userId = stored.userId || '';
+    const userId = this.normalizeUserId(stored.userId);
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const extensionId = chrome.runtime.id;
     const extensionVersion = chrome.runtime
@@ -244,7 +270,8 @@ class AuthManager {
   }
 
   async onLoginSuccess(userId: string): Promise<void> {
-    await chrome.storage.local.set({ userId });
+    const normalizedUserId = this.normalizeUserId(userId);
+    await chrome.storage.local.set({ userId: normalizedUserId });
     await this.refreshToken(true);
   }
 
@@ -280,6 +307,27 @@ class AuthManager {
     } catch {
       return false;
     }
+  }
+
+  private normalizeUserId(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private deriveUserIdFromAuthUser(authUser: unknown): string {
+    if (!authUser || typeof authUser !== 'object') {
+      return '';
+    }
+
+    const profile = authUser as Record<string, unknown>;
+    const candidates = [profile.email, profile.username, profile.displayName];
+
+    for (const candidate of candidates) {
+      const normalized = this.normalizeUserId(candidate);
+      if (normalized) {
+        return normalized;
+      }
+    }
+    return '';
   }
 }
 

@@ -2,7 +2,7 @@
   "name": "side-translation",
   "description": "manifest.json description",
   "private": true,
-  "version": "1.8.8",
+  "version": "1.8.10",
   "type": "module",
   "scripts": {
     "dev": "wxt",
