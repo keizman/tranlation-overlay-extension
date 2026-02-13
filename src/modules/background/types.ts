@@ -60,6 +60,20 @@ export interface SetSelectionBannerDisabledMessage {
   disabled: boolean;
 }
 
+export interface AppLogEntryPayload {
+  timestamp: string;
+  level: 'log' | 'warn' | 'error';
+  module: string;
+  message: string;
+  args?: string;
+  seq?: number;
+}
+
+export interface AppLogBatchMessage {
+  type: 'APP_LOG_BATCH';
+  entries: AppLogEntryPayload[];
+}
+
 export type BackgroundMessage =
   | ShowNotificationMessage
   | OpenPopupMessage
@@ -70,7 +84,8 @@ export type BackgroundMessage =
   | SettingsUpdatedMessage
   | ApiConfigUpdatedMessage
   | ManualTranslateMessage
-  | SetSelectionBannerDisabledMessage;
+  | SetSelectionBannerDisabledMessage
+  | AppLogBatchMessage;
 
 // ================================
 // API 响应类型定义
@@ -260,6 +275,7 @@ export const MESSAGE_TYPES = {
   API_CONFIG_UPDATED: 'api_config_updated',
   MANUAL_TRANSLATE: 'MANUAL_TRANSLATE',
   SET_SELECTION_BANNER_DISABLED: 'SET_SELECTION_BANNER_DISABLED',
+  APP_LOG_BATCH: 'APP_LOG_BATCH',
 } as const;
 
 export const EXTENSION_COMMANDS = {

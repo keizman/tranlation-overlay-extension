@@ -1,33 +1,52 @@
 /**
- * WebSocket 日志上报模块
+ * 统一日志模块
  *
- * 将日志通过 WebSocket 实时上报到服务器
+ * 传输通道：
+ * 1) App Bridge（默认启用）：Report -> background -> native bridge -> Android logcat
+ * 2) WebSocket（可选）：由 VITE_WS_LOG_ENABLED 控制，默认可关闭
  *
- * 设计原则：
- * 1. 启动时尝试连接，2秒间隔，最多5次，失败后停止
- * 2. 调用方无需关心连接状态，若无连接直接丢弃日志
+ * 重试规则：
+ * - 2 秒间隔
+ * - 最多 5 次
+ * - 达到上限后停止当前通道
  */
 
-// WebSocket 服务器地址（从环境变量读取）
+import { browser } from 'wxt/browser';
+
 const WS_SERVER_URI = import.meta.env.VITE_WS_LOG_SERVER || '';
+const WS_LOG_ENABLED =
+  String(import.meta.env.VITE_WS_LOG_ENABLED || '').toLowerCase() === 'true';
 
-// 重连配置
-const RECONNECT_INTERVAL = 2000; // 2秒
-const MAX_RECONNECT_ATTEMPTS = 5; // 最多5次
+const RETRY_INTERVAL_MS = 2000;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const APP_LOG_BATCH_MESSAGE_TYPE = 'APP_LOG_BATCH';
+const APP_LOG_BATCH_SIZE = 30;
+const APP_LOG_FLUSH_INTERVAL_MS = 200;
+const APP_LOG_MAX_QUEUE_SIZE = 500;
 
-// 日志级别
 type LogLevel = 'log' | 'warn' | 'error';
 
-// 日志条目接口
 interface LogEntry {
   timestamp: string;
   level: LogLevel;
   module: string;
   message: string;
   args?: string;
+  seq: number;
 }
 
-const MAX_ARG_LENGTH = 1200;
+interface AppLogBatchResponse {
+  success?: boolean;
+  error?: string;
+  result?: {
+    ok?: boolean;
+    accepted?: number;
+    error?: string;
+  };
+}
+
+const MAX_ARG_LENGTH = 20_000;
+let logSequence = 0;
 
 function truncate(value: string, max: number = MAX_ARG_LENGTH): string {
   if (value.length <= max) return value;
@@ -39,7 +58,7 @@ function serializeError(error: Error): Record<string, unknown> {
     type: 'Error',
     name: error.name,
     message: error.message,
-    stack: error.stack ? truncate(error.stack, 2000) : undefined,
+    stack: error.stack ? truncate(error.stack) : undefined,
   };
 }
 
@@ -102,141 +121,275 @@ function serializeArg(arg: unknown): string {
   return truncate(String(arg));
 }
 
-// WebSocket 连接状态
-let ws: WebSocket | null = null;
-let isConnecting = false;
-let reconnectAttempts = 0;
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let stopped = false; // 是否已停止重连
-
-/**
- * 获取当前时间戳
- */
 function getTimestamp(): string {
   return new Date().toISOString();
 }
 
-/**
- * 格式化参数为字符串
- */
 function formatArgs(args: unknown[]): string | undefined {
   if (args.length === 0) return undefined;
   return args.map((a) => serializeArg(a)).join(' ');
 }
 
-/**
- * 发送日志到服务器
- * 若无连接则直接丢弃
- */
-function sendLog(entry: LogEntry): void {
+// ---------------- App Bridge 日志通道 ----------------
+let appLogQueue: LogEntry[] = [];
+let appFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let appRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let appRetryAttempts = 0;
+let appTransportStopped = false;
+let appTransportFlushing = false;
+
+function isRuntimeMessagingAvailable(): boolean {
+  return typeof browser.runtime?.sendMessage === 'function';
+}
+
+function resetAppRetryState(): void {
+  appRetryAttempts = 0;
+  if (appRetryTimer) {
+    clearTimeout(appRetryTimer);
+    appRetryTimer = null;
+  }
+}
+
+function scheduleAppRetry(errorMessage: string): void {
+  if (appTransportStopped) {
+    return;
+  }
+
+  appRetryAttempts++;
+
+  if (appRetryAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    appTransportStopped = true;
+    appLogQueue = [];
+    console.warn(
+      `[Report] App 日志桥接已达到最大重试次数(${MAX_RECONNECT_ATTEMPTS})，停止转发`,
+      { error: errorMessage },
+    );
+    return;
+  }
+
+  if (appRetryTimer) {
+    clearTimeout(appRetryTimer);
+  }
+
+  appRetryTimer = setTimeout(() => {
+    appRetryTimer = null;
+    scheduleAppFlush(0);
+  }, RETRY_INTERVAL_MS);
+}
+
+function scheduleAppFlush(delayMs: number = APP_LOG_FLUSH_INTERVAL_MS): void {
+  if (appTransportStopped || appTransportFlushing || appFlushTimer) {
+    return;
+  }
+
+  appFlushTimer = setTimeout(() => {
+    appFlushTimer = null;
+    void flushAppLogQueue();
+  }, delayMs);
+}
+
+async function forwardBatchToBackground(entries: LogEntry[]): Promise<number> {
+  if (!isRuntimeMessagingAvailable()) {
+    throw new Error('runtime_messaging_unavailable');
+  }
+
+  const response = (await browser.runtime.sendMessage({
+    type: APP_LOG_BATCH_MESSAGE_TYPE,
+    entries,
+  })) as AppLogBatchResponse | undefined;
+
+  if (!response || response.success !== true || response.result?.ok !== true) {
+    const responseError =
+      response?.error ||
+      response?.result?.error ||
+      'app_log_batch_response_error';
+    throw new Error(responseError);
+  }
+
+  const accepted = response.result.accepted;
+  if (typeof accepted !== 'number') {
+    return entries.length;
+  }
+
+  if (accepted <= 0) {
+    throw new Error('app_log_batch_zero_accepted');
+  }
+
+  return Math.min(accepted, entries.length);
+}
+
+async function flushAppLogQueue(): Promise<void> {
+  if (appTransportStopped || appTransportFlushing || appLogQueue.length === 0) {
+    return;
+  }
+
+  appTransportFlushing = true;
+
+  try {
+    while (appLogQueue.length > 0) {
+      const batch = appLogQueue.slice(0, APP_LOG_BATCH_SIZE);
+      const accepted = await forwardBatchToBackground(batch);
+      appLogQueue.splice(0, accepted);
+      resetAppRetryState();
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    scheduleAppRetry(message);
+  } finally {
+    appTransportFlushing = false;
+    if (!appTransportStopped && appLogQueue.length > 0 && !appRetryTimer) {
+      scheduleAppFlush(0);
+    }
+  }
+}
+
+function enqueueAppLog(entry: LogEntry): void {
+  if (appTransportStopped) {
+    return;
+  }
+
+  appLogQueue.push(entry);
+  if (appLogQueue.length > APP_LOG_MAX_QUEUE_SIZE) {
+    appLogQueue.shift();
+  }
+
+  scheduleAppFlush();
+}
+
+// ---------------- WebSocket 日志通道（可选） ----------------
+let ws: WebSocket | null = null;
+let wsConnecting = false;
+let wsReconnectAttempts = 0;
+let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let wsStopped = false;
+
+function sendWsLog(entry: LogEntry): void {
+  if (!WS_LOG_ENABLED || wsStopped) {
+    return;
+  }
+
   if (ws && ws.readyState === WebSocket.OPEN) {
     try {
       ws.send(JSON.stringify(entry));
     } catch {
-      // 发送失败，丢弃
+      // 发送失败后由 close/reconnect 机制处理
     }
   }
-  // 无连接时直接丢弃，不缓冲
 }
 
-/**
- * 连接 WebSocket 服务器
- */
-function connect(): void {
-  if (stopped || isConnecting || (ws && ws.readyState === WebSocket.OPEN)) {
+function connectWebSocket(): void {
+  if (
+    !WS_LOG_ENABLED ||
+    wsStopped ||
+    wsConnecting ||
+    (ws && ws.readyState === WebSocket.OPEN)
+  ) {
     return;
   }
 
-  isConnecting = true;
+  wsConnecting = true;
   console.log(
-    `[Report] 正在连接服务器: ${WS_SERVER_URI} (第${reconnectAttempts + 1}次)`,
+    `[Report] 正在连接 WS 日志服务器: ${WS_SERVER_URI} (第${wsReconnectAttempts + 1}次)`,
   );
 
   try {
     ws = new WebSocket(WS_SERVER_URI);
 
     ws.onopen = () => {
-      isConnecting = false;
-      reconnectAttempts = 0;
+      wsConnecting = false;
+      wsReconnectAttempts = 0;
       console.log('[Report] ✅ WebSocket 已连接');
     };
 
     ws.onclose = (event) => {
-      isConnecting = false;
+      wsConnecting = false;
       ws = null;
       console.log(`[Report] WebSocket 已关闭: code=${event.code}`);
-      scheduleReconnect();
+      scheduleWsReconnect();
     };
 
     ws.onerror = () => {
-      isConnecting = false;
-      // error 事件后通常会触发 close，由 close 处理重连
+      wsConnecting = false;
     };
 
     ws.onmessage = (event) => {
       console.log('[Report] 收到服务器消息:', event.data);
     };
   } catch {
-    isConnecting = false;
-    scheduleReconnect();
+    wsConnecting = false;
+    scheduleWsReconnect();
   }
 }
 
-/**
- * 调度重连
- */
-function scheduleReconnect(): void {
-  if (stopped) return;
+function scheduleWsReconnect(): void {
+  if (!WS_LOG_ENABLED || wsStopped) {
+    return;
+  }
 
-  reconnectAttempts++;
+  wsReconnectAttempts++;
 
-  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    stopped = true;
+  if (wsReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    wsStopped = true;
     console.log(
-      `[Report] ⛔ 已达到最大重连次数(${MAX_RECONNECT_ATTEMPTS})，停止尝试`,
+      `[Report] ⛔ WebSocket 达到最大重连次数(${MAX_RECONNECT_ATTEMPTS})，停止尝试`,
     );
     return;
   }
 
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer);
   }
 
-  console.log(
-    `[Report] ${RECONNECT_INTERVAL / 1000}秒后尝试重连 (第${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS}次)`,
-  );
-
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connect();
-  }, RECONNECT_INTERVAL);
+  wsReconnectTimer = setTimeout(() => {
+    wsReconnectTimer = null;
+    connectWebSocket();
+  }, RETRY_INTERVAL_MS);
 }
 
-/**
- * 初始化连接
- */
+function sendLog(entry: LogEntry): void {
+  enqueueAppLog(entry);
+  sendWsLog(entry);
+}
+
 export function initReport(): void {
+  if (!WS_LOG_ENABLED) {
+    wsStopped = true;
+    console.log(
+      '[Report] WebSocket 日志上报已禁用 (VITE_WS_LOG_ENABLED=false)',
+    );
+    return;
+  }
+
   if (!WS_SERVER_URI) {
-    console.log('[Report] 未配置 WS 服务器地址，跳过日志上报');
-    stopped = true;
+    console.log('[Report] 未配置 WS 服务器地址，跳过 WebSocket 上报');
+    wsStopped = true;
     return;
   }
   if (typeof WebSocket === 'undefined') {
     console.warn('[Report] 当前环境不支持 WebSocket');
-    stopped = true;
+    wsStopped = true;
     return;
   }
-  connect();
+  connectWebSocket();
 }
 
-/**
- * 关闭连接
- */
 export function closeReport(): void {
-  stopped = true;
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
+  appTransportStopped = true;
+  appLogQueue = [];
+
+  if (appFlushTimer) {
+    clearTimeout(appFlushTimer);
+    appFlushTimer = null;
+  }
+  if (appRetryTimer) {
+    clearTimeout(appRetryTimer);
+    appRetryTimer = null;
+  }
+
+  wsStopped = true;
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = null;
   }
   if (ws) {
     ws.close();
@@ -244,9 +397,6 @@ export function closeReport(): void {
   }
 }
 
-/**
- * 核心日志函数
- */
 function log(
   level: LogLevel,
   module: string,
@@ -255,26 +405,22 @@ function log(
 ): void {
   const argsStr = formatArgs(args);
 
-  // 始终输出到控制台
   const consoleMethod =
     level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log';
   const prefix = level === 'error' ? '❌ ' : level === 'warn' ? '⚠️ ' : '';
   console[consoleMethod](`[${module}] ${prefix}${msg}`, ...args);
 
-  // 上报到服务器（无连接则丢弃）
   const entry: LogEntry = {
     timestamp: getTimestamp(),
     level,
     module,
     message: msg,
     args: argsStr,
+    seq: logSequence++,
   };
   sendLog(entry);
 }
 
-/**
- * 日志上报对象
- */
 export const report = {
   log: (module: string, msg: string, ...args: unknown[]) =>
     log('log', module, msg, ...args),
@@ -284,9 +430,6 @@ export const report = {
     log('error', module, msg, ...args),
 };
 
-/**
- * 创建模块专用 logger（与原 DebugLogger API 兼容）
- */
 export function createModuleLogger(moduleName: string) {
   return {
     log: (msg: string, ...args: unknown[]) =>
@@ -298,7 +441,6 @@ export function createModuleLogger(moduleName: string) {
   };
 }
 
-// 自动初始化连接
 if (typeof window !== 'undefined') {
   initReport();
 }

@@ -181,6 +181,10 @@ export default defineBackground(() => {
         handleSetSelectionBannerDisabled(message, sendResponse);
         return true;
 
+      case MESSAGE_TYPES.APP_LOG_BATCH:
+        handleAppLogBatch(message, sendResponse);
+        return true;
+
       // 处理更新检查相关消息
       case 'CHECK_UPDATE':
       case 'CLEAR_UPDATE_BADGE':
@@ -431,6 +435,54 @@ export default defineBackground(() => {
             error: errorMessage,
           },
         );
+        sendResponse({
+          success: false,
+          error: errorMessage,
+        });
+      }
+    })();
+  }
+
+  function handleAppLogBatch(
+    message: any,
+    sendResponse: (response: any) => void,
+  ): void {
+    (async () => {
+      try {
+        const entries = Array.isArray(message?.entries) ? message.entries : [];
+
+        if (entries.length === 0) {
+          sendResponse({
+            success: true,
+            result: {
+              ok: true,
+              supported: true,
+              accepted: 0,
+            },
+          });
+          return;
+        }
+
+        const result = await appNativeControlAdapter.sendAppLogBatch(entries);
+
+        if (!result.ok) {
+          console.warn('[Background] App log batch forwarding failed', {
+            count: entries.length,
+            supported: result.supported,
+            error: result.error,
+          });
+        }
+
+        sendResponse({
+          success: result.ok,
+          result,
+        });
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        console.warn('[Background] App log batch forwarding exception', {
+          error: errorMessage,
+        });
         sendResponse({
           success: false,
           error: errorMessage,

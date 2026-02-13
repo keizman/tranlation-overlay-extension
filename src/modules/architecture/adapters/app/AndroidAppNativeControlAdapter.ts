@@ -7,10 +7,29 @@ export interface NativeControlResult {
   error?: string;
 }
 
+export type NativeAppLogLevel = 'log' | 'warn' | 'error';
+
+export interface NativeAppLogEntry {
+  timestamp: string;
+  level: NativeAppLogLevel;
+  module: string;
+  message: string;
+  args?: string;
+  seq?: number;
+}
+
+export interface NativeAppLogResult {
+  ok: boolean;
+  supported: boolean;
+  accepted?: number;
+  error?: string;
+}
+
 export class AndroidAppNativeControlAdapter {
   private static readonly HOST_NAME = 'linguasurfAppBridge';
   private static readonly TYPE_SET = 'SET_SELECTION_BANNER_DISABLED';
   private static readonly TYPE_GET = 'GET_SELECTION_BANNER_DISABLED';
+  private static readonly TYPE_LOG_BATCH = 'APP_LOG_BATCH';
   private static readonly NATIVE_CALL_TIMEOUT_MS = 3000;
 
   async setSystemSelectionBannerDisabled(
@@ -85,6 +104,51 @@ export class AndroidAppNativeControlAdapter {
       return {
         ok: false,
         supported: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async sendAppLogBatch(
+    entries: NativeAppLogEntry[],
+  ): Promise<NativeAppLogResult> {
+    if (!this.isNativeMessagingAvailable()) {
+      return {
+        ok: false,
+        supported: false,
+        accepted: 0,
+        error: 'native_messaging_unavailable',
+      };
+    }
+
+    try {
+      const response = await this.sendNativeMessage({
+        type: AndroidAppNativeControlAdapter.TYPE_LOG_BATCH,
+        entries,
+      });
+
+      const ok = response?.ok === true;
+      const accepted =
+        typeof response?.accepted === 'number'
+          ? (response.accepted as number)
+          : ok
+            ? entries.length
+            : 0;
+
+      return {
+        ok,
+        supported: true,
+        accepted,
+        error:
+          ok || typeof response?.error !== 'string'
+            ? undefined
+            : (response.error as string),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        supported: false,
+        accepted: 0,
         error: error instanceof Error ? error.message : String(error),
       };
     }
