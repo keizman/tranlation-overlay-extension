@@ -3,6 +3,7 @@
  */
 
 import { browser } from 'wxt/browser';
+import '@/src/modules/shared/utils/Report';
 import { StorageService } from '@/src/modules/core/storage';
 import { NotificationService } from '@/src/modules/background/services/NotificationService';
 import { ApiProxyService } from '@/src/modules/background/services/ApiProxyService';
@@ -145,7 +146,9 @@ export default defineBackground(() => {
    * 处理运行时消息
    */
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log(`[Background] 收到消息: ${message.type}`);
+    if (message.type !== MESSAGE_TYPES.APP_LOG_BATCH) {
+      console.log(`[Background] 收到消息: ${message.type}`);
+    }
 
     switch (message.type) {
       case MESSAGE_TYPES.SHOW_NOTIFICATION:

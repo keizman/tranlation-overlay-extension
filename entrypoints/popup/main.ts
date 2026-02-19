@@ -1,4 +1,5 @@
 import { createApp } from 'vue';
+import '@/src/modules/shared/utils/Report';
 import './style.css';
 import App from './App.vue';
 import '../../assets/main.css';

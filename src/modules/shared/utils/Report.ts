@@ -23,8 +23,10 @@ const APP_LOG_BATCH_MESSAGE_TYPE = 'APP_LOG_BATCH';
 const APP_LOG_BATCH_SIZE = 30;
 const APP_LOG_FLUSH_INTERVAL_MS = 200;
 const APP_LOG_MAX_QUEUE_SIZE = 500;
+const CONSOLE_MODULE_DEFAULT = 'Console';
 
 type LogLevel = 'log' | 'warn' | 'error';
+type ConsoleLevel = LogLevel | 'info' | 'debug';
 
 interface LogEntry {
   timestamp: string;
@@ -47,6 +49,28 @@ interface AppLogBatchResponse {
 
 const MAX_ARG_LENGTH = 20_000;
 let logSequence = 0;
+let consoleBridgeInstalled = false;
+let isForwardingConsoleLog = false;
+
+const rawConsole = (() => {
+  const consoleObj = globalThis.console;
+  const noop = () => {};
+
+  const bind = (method: keyof Console) => {
+    const fn = consoleObj?.[method];
+    return typeof fn === 'function'
+      ? (fn as (...args: unknown[]) => void).bind(consoleObj)
+      : noop;
+  };
+
+  return {
+    log: bind('log'),
+    info: bind('info'),
+    debug: bind('debug'),
+    warn: bind('warn'),
+    error: bind('error'),
+  };
+})();
 
 function truncate(value: string, max: number = MAX_ARG_LENGTH): string {
   if (value.length <= max) return value;
@@ -128,6 +152,63 @@ function getTimestamp(): string {
 function formatArgs(args: unknown[]): string | undefined {
   if (args.length === 0) return undefined;
   return args.map((a) => serializeArg(a)).join(' ');
+}
+
+function toLogLevel(level: ConsoleLevel): LogLevel {
+  if (level === 'error') return 'error';
+  if (level === 'warn') return 'warn';
+  return 'log';
+}
+
+function writeRawConsole(level: ConsoleLevel, ...args: unknown[]): void {
+  const writer =
+    level === 'error'
+      ? rawConsole.error
+      : level === 'warn'
+        ? rawConsole.warn
+        : level === 'info'
+          ? rawConsole.info
+          : level === 'debug'
+            ? rawConsole.debug
+            : rawConsole.log;
+  writer(...args);
+}
+
+function parseConsoleMessage(args: unknown[]): {
+  module: string;
+  message: string;
+  trailingArgs: unknown[];
+} {
+  if (args.length === 0) {
+    return {
+      module: CONSOLE_MODULE_DEFAULT,
+      message: '',
+      trailingArgs: [],
+    };
+  }
+
+  const [first, ...rest] = args;
+  if (typeof first === 'string') {
+    const match = first.match(/^\[([^\]]+)]\s*(.*)$/);
+    if (match) {
+      return {
+        module: match[1] || CONSOLE_MODULE_DEFAULT,
+        message: match[2] || '',
+        trailingArgs: rest,
+      };
+    }
+    return {
+      module: CONSOLE_MODULE_DEFAULT,
+      message: first,
+      trailingArgs: rest,
+    };
+  }
+
+  return {
+    module: CONSOLE_MODULE_DEFAULT,
+    message: serializeArg(first),
+    trailingArgs: rest,
+  };
 }
 
 // ---------------- App Bridge 日志通道 ----------------
@@ -351,6 +432,73 @@ function sendLog(entry: LogEntry): void {
   sendWsLog(entry);
 }
 
+function sendLogEntry(
+  level: LogLevel,
+  module: string,
+  message: string,
+  args: unknown[],
+): void {
+  const argsStr = formatArgs(args);
+  const entry: LogEntry = {
+    timestamp: getTimestamp(),
+    level,
+    module,
+    message,
+    args: argsStr,
+    seq: logSequence++,
+  };
+  sendLog(entry);
+}
+
+function shouldSkipConsoleForwarding(module: string, message: string): boolean {
+  return (
+    module === 'Background' &&
+    message.includes('收到消息') &&
+    message.includes(APP_LOG_BATCH_MESSAGE_TYPE)
+  );
+}
+
+function installConsoleBridge(): void {
+  if (consoleBridgeInstalled || typeof globalThis.console === 'undefined') {
+    return;
+  }
+
+  const consoleObj = globalThis.console;
+  const wrap = (level: ConsoleLevel) => {
+    return (...args: unknown[]) => {
+      writeRawConsole(level, ...args);
+
+      if (isForwardingConsoleLog) {
+        return;
+      }
+
+      const parsed = parseConsoleMessage(args);
+      if (shouldSkipConsoleForwarding(parsed.module, parsed.message)) {
+        return;
+      }
+
+      isForwardingConsoleLog = true;
+      try {
+        sendLogEntry(
+          toLogLevel(level),
+          parsed.module,
+          parsed.message,
+          parsed.trailingArgs,
+        );
+      } finally {
+        isForwardingConsoleLog = false;
+      }
+    };
+  };
+
+  consoleObj.log = wrap('log');
+  consoleObj.info = wrap('info');
+  consoleObj.debug = wrap('debug');
+  consoleObj.warn = wrap('warn');
+  consoleObj.error = wrap('error');
+  consoleBridgeInstalled = true;
+}
+
 export function initReport(): void {
   if (!WS_LOG_ENABLED) {
     wsStopped = true;
@@ -403,22 +551,10 @@ function log(
   msg: string,
   ...args: unknown[]
 ): void {
-  const argsStr = formatArgs(args);
-
-  const consoleMethod =
-    level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log';
+  const consoleMethod = toLogLevel(level);
   const prefix = level === 'error' ? '❌ ' : level === 'warn' ? '⚠️ ' : '';
-  console[consoleMethod](`[${module}] ${prefix}${msg}`, ...args);
-
-  const entry: LogEntry = {
-    timestamp: getTimestamp(),
-    level,
-    module,
-    message: msg,
-    args: argsStr,
-    seq: logSequence++,
-  };
-  sendLog(entry);
+  writeRawConsole(consoleMethod, `[${module}] ${prefix}${msg}`, ...args);
+  sendLogEntry(level, module, msg, args);
 }
 
 export const report = {
@@ -440,6 +576,8 @@ export function createModuleLogger(moduleName: string) {
       log('error', moduleName, msg, ...args),
   };
 }
+
+installConsoleBridge();
 
 if (typeof window !== 'undefined') {
   initReport();

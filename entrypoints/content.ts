@@ -1,3 +1,4 @@
+import '@/src/modules/shared/utils/Report';
 import { ContentManager } from '@/src/modules/content/ContentManager';
 
 /**
