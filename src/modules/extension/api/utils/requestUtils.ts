@@ -11,9 +11,84 @@ import {
 } from '../../../architecture/bootstrap/defaultAdapters';
 
 const logger = createModuleLogger('ChatApiRequest');
+const CHAT_COMPLETIONS_PATH = '/v1/chat/completions';
+
+let currentPageSessionUrl = '';
+let currentPageSessionId = '';
+let currentPageRequestSeq = 0;
 
 function shouldTraceChatRequest(apiEndpoint: string): boolean {
-  return apiEndpoint.includes('/v1/chat/completions');
+  return apiEndpoint.includes(CHAT_COMPLETIONS_PATH);
+}
+
+function hasPageRequestSeq(value: unknown): boolean {
+  if (typeof value === 'number') {
+    return Number.isInteger(value) && value > 0;
+  }
+  if (typeof value === 'string') {
+    return /^\d+$/.test(value.trim()) && Number(value.trim()) > 0;
+  }
+  return false;
+}
+
+function resolveCurrentPageUrl(): string | null {
+  if (typeof window !== 'undefined' && window.location?.href) {
+    return window.location.href;
+  }
+  if (typeof location !== 'undefined' && location.href) {
+    return location.href;
+  }
+  return null;
+}
+
+function generatePageSessionId(): string {
+  if (
+    typeof crypto !== 'undefined' &&
+    typeof crypto.randomUUID === 'function'
+  ) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function augmentChatRequestBodyWithPageMeta(
+  requestBody: any,
+  apiEndpoint: string,
+): any {
+  if (!shouldTraceChatRequest(apiEndpoint)) return requestBody;
+  if (!requestBody || typeof requestBody !== 'object') return requestBody;
+
+  const hasSessionId =
+    typeof requestBody.x_page_session_id === 'string' &&
+    requestBody.x_page_session_id.trim().length > 0;
+  const hasRequestSeq = hasPageRequestSeq(requestBody.x_page_request_seq);
+
+  if (hasSessionId && hasRequestSeq) {
+    return requestBody;
+  }
+
+  const currentUrl = resolveCurrentPageUrl();
+  if (!currentUrl) {
+    return requestBody;
+  }
+
+  if (!currentPageSessionId || currentPageSessionUrl !== currentUrl) {
+    currentPageSessionUrl = currentUrl;
+    currentPageSessionId = generatePageSessionId();
+    currentPageRequestSeq = 0;
+  }
+
+  currentPageRequestSeq += 1;
+
+  return {
+    ...requestBody,
+    x_page_session_id: hasSessionId
+      ? requestBody.x_page_session_id
+      : currentPageSessionId,
+    x_page_request_seq: hasRequestSeq
+      ? requestBody.x_page_request_seq
+      : currentPageRequestSeq,
+  };
 }
 
 /**
@@ -40,6 +115,10 @@ async function sendDirectRequest(
   timeout: number,
 ): Promise<Response> {
   const traceChat = shouldTraceChatRequest(apiConfig.apiEndpoint);
+  const requestPayload = augmentChatRequestBodyWithPageMeta(
+    requestBody,
+    apiConfig.apiEndpoint,
+  );
 
   // 构建请求头
   const headers: Record<string, string> = {
@@ -69,6 +148,8 @@ async function sendDirectRequest(
       hasBusinessAuthorization: !!headers.Authorization,
       hasSiteAuth: !!headers.site_auth,
       hasSiteApi: !!headers.site_api,
+      pageSessionId: requestPayload?.x_page_session_id,
+      pageRequestSeq: requestPayload?.x_page_request_seq,
     });
   }
 
@@ -76,7 +157,7 @@ async function sendDirectRequest(
     url: apiConfig.apiEndpoint,
     method: 'POST',
     headers,
-    body: JSON.stringify(requestBody),
+    body: JSON.stringify(requestPayload),
     timeoutMs: timeout,
     retries: 1,
   });
@@ -115,6 +196,10 @@ async function sendViaBackground(
   timeout: number,
 ): Promise<Response> {
   const traceChat = shouldTraceChatRequest(apiConfig.apiEndpoint);
+  const requestPayload = augmentChatRequestBodyWithPageMeta(
+    requestBody,
+    apiConfig.apiEndpoint,
+  );
 
   // 构建请求头
   const headers: Record<string, string> = {
@@ -144,6 +229,8 @@ async function sendViaBackground(
       hasBusinessAuthorization: !!headers.Authorization,
       hasSiteAuth: !!headers.site_auth,
       hasSiteApi: !!headers.site_api,
+      pageSessionId: requestPayload?.x_page_session_id,
+      pageRequestSeq: requestPayload?.x_page_request_seq,
     });
   }
 
@@ -153,7 +240,7 @@ async function sendViaBackground(
       url: apiConfig.apiEndpoint,
       method: 'POST',
       headers,
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify(requestPayload),
       timeout: timeout,
     },
   })) as BackgroundProxyResponse;
