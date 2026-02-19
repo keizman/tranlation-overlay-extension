@@ -60,6 +60,9 @@ onMounted(async () => {
   nextTick(() => {
     isInitializing = false;
   });
+  console.info(
+    '[LinguaSurfPopup] Popup UI mounted: nativeLanguage/targetLanguage/lazyLoading/apiSettings section ready',
+  );
 
   try {
     const manifest = browser.runtime.getManifest();
