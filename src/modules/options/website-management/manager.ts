@@ -1,13 +1,31 @@
 import glob from './glob';
-import { WebsiteRule, WebsiteManagementSettings, WebsiteStatus } from './types';
+import {
+  WebsiteManagementSettings,
+  WebsiteRule,
+  WebsiteRuleType,
+  WebsiteStatus,
+} from './types';
 
-// 用于向后兼容的旧黑名单设置接口
 interface BlacklistSettings {
   patterns: string[];
 }
 
-// 默认设置
-const DEFAULT_SETTINGS: WebsiteManagementSettings = { rules: [] };
+interface ParsedDomainPart {
+  pattern: string;
+  negated: boolean;
+}
+
+interface ParsedCustomFilterRule {
+  domains: ParsedDomainPart[];
+  selector: string;
+  exception: boolean;
+}
+
+const DEFAULT_SETTINGS: WebsiteManagementSettings = {
+  rules: [],
+  customFiltersEnabled: true,
+  customFiltersText: '',
+};
 const STORAGE_KEY = 'website-management-settings';
 const LEGACY_BLACKLIST_KEY = 'blacklist-settings';
 
@@ -15,117 +33,74 @@ export class WebsiteManager {
   private settingsCache: WebsiteManagementSettings | null = null;
   private cacheTimestamp: number | null = null;
 
-  /**
-   * 获取网站状态
-   */
   async getWebsiteStatus(url: string): Promise<WebsiteStatus> {
-    console.log(`[WebsiteManager] 获取网站状态: ${url}`);
-
-    // 不立即清除缓存，先检查缓存是否有效
     const settings = await this.getSettings();
 
-    // 添加缓存时间戳检查，如果缓存超过5秒则清除
     const now = Date.now();
     if (this.cacheTimestamp && now - this.cacheTimestamp > 5000) {
-      console.log('[WebsiteManager] 缓存过期，清除缓存');
       this.clearCache();
     }
 
-    // 先检查黑名单规则（优先级最高）
     const blacklistRules = settings.rules.filter(
       (rule) => rule.type === 'blacklist' && rule.enabled,
     );
-
     for (const rule of blacklistRules) {
       if (glob.match(rule.pattern, url)) {
-        console.log(`[WebsiteManager] 匹配黑名单规则: ${rule.pattern}`);
         return 'blacklisted';
       }
     }
 
-    // 再检查白名单规则
     const whitelistRules = settings.rules.filter(
       (rule) => rule.type === 'whitelist' && rule.enabled,
     );
-
     for (const rule of whitelistRules) {
       if (glob.match(rule.pattern, url)) {
-        console.log(`[WebsiteManager] 匹配白名单规则: ${rule.pattern}`);
         return 'whitelisted';
       }
     }
 
-    console.log('[WebsiteManager] 网站状态正常');
     return 'normal';
   }
 
-  /**
-   * 检查是否被黑名单禁用（兼容原有接口）
-   */
   async isBlacklisted(url: string): Promise<boolean> {
-    const status = await this.getWebsiteStatus(url);
-    return status === 'blacklisted';
+    return (await this.getWebsiteStatus(url)) === 'blacklisted';
   }
 
-  /**
-   * 检查是否在白名单中
-   */
   async isWhitelisted(url: string): Promise<boolean> {
-    const status = await this.getWebsiteStatus(url);
-    return status === 'whitelisted';
+    return (await this.getWebsiteStatus(url)) === 'whitelisted';
   }
 
-  /**
-   * 获取所有规则
-   */
   async getRules(): Promise<WebsiteRule[]> {
     const settings = await this.getSettings();
-    return settings.rules;
+    return [...settings.rules];
   }
 
-  /**
-   * 根据类型获取规则
-   */
-  async getRulesByType(
-    type: 'blacklist' | 'whitelist',
-  ): Promise<WebsiteRule[]> {
-    // 清除缓存确保获取最新规则列表
+  async getRulesByType(type: WebsiteRuleType): Promise<WebsiteRule[]> {
     this.clearCache();
     const settings = await this.getSettings();
     return settings.rules.filter((rule) => rule.type === type);
   }
 
-  /**
-   * 添加规则
-   */
   async addRule(
     pattern: string,
-    type: 'blacklist' | 'whitelist',
+    type: WebsiteRuleType,
     description?: string,
   ): Promise<void> {
     if (!pattern) return;
 
-    // 强制清除缓存，确保获取最新数据，避免使用过期缓存导致已删除数据被恢复
     this.clearCache();
     const settings = await this.getSettings();
 
-    // 检查是否已存在相同pattern的规则（不论类型）
     const existingRule = settings.rules.find(
       (rule) => rule.pattern === pattern,
     );
-
     if (existingRule) {
       if (existingRule.type === type) {
-        return; // 完全相同的规则已存在，不重复添加
-      } else {
-        // 相同pattern但不同type的规则存在，先移除旧规则
-        const ruleIndex = settings.rules.findIndex(
-          (rule) => rule.id === existingRule.id,
-        );
-        if (ruleIndex > -1) {
-          settings.rules.splice(ruleIndex, 1);
-        }
+        return;
       }
+      settings.rules = settings.rules.filter(
+        (rule) => rule.id !== existingRule.id,
+      );
     }
 
     const newRule: WebsiteRule = {
@@ -139,12 +114,9 @@ export class WebsiteManager {
 
     settings.rules.push(newRule);
     await this.saveSettings(settings);
-    this.clearCache(); // 清除缓存确保数据是最新的
+    this.clearCache();
   }
 
-  /**
-   * 更新规则
-   */
   async updateRule(id: string, updates: Partial<WebsiteRule>): Promise<void> {
     const settings = await this.getSettings();
     const ruleIndex = settings.rules.findIndex((rule) => rule.id === id);
@@ -159,73 +131,146 @@ export class WebsiteManager {
     };
 
     await this.saveSettings(settings);
-    this.clearCache(); // 清除缓存确保数据是最新的
+    this.clearCache();
   }
 
-  /**
-   * 删除规则
-   */
   async removeRule(id: string): Promise<void> {
     const settings = await this.getSettings();
-    const ruleIndex = settings.rules.findIndex((rule) => rule.id === id);
-
-    if (ruleIndex > -1) {
-      settings.rules.splice(ruleIndex, 1);
-      await this.saveSettings(settings);
-      this.clearCache(); // 清除缓存确保数据是最新的
-    }
+    settings.rules = settings.rules.filter((rule) => rule.id !== id);
+    await this.saveSettings(settings);
+    this.clearCache();
   }
 
-  /**
-   * 批量删除规则
-   */
   async removeRules(ids: string[]): Promise<void> {
     const settings = await this.getSettings();
     settings.rules = settings.rules.filter((rule) => !ids.includes(rule.id));
     await this.saveSettings(settings);
-    this.clearCache(); // 清除缓存确保数据是最新的
+    this.clearCache();
   }
 
-  /**
-   * 启用/禁用规则
-   */
   async toggleRule(id: string): Promise<void> {
     const settings = await this.getSettings();
-    const rule = settings.rules.find((rule) => rule.id === id);
+    const rule = settings.rules.find((item) => item.id === id);
 
-    if (rule) {
-      rule.enabled = !rule.enabled;
-      await this.saveSettings(settings);
-      this.clearCache(); // 清除缓存确保数据是最新的
-    }
+    if (!rule) return;
+
+    rule.enabled = !rule.enabled;
+    await this.saveSettings(settings);
+    this.clearCache();
   }
 
-  /**
-   * 获取设置，包含兼容性处理
-   */
+  async isCustomFiltersEnabled(): Promise<boolean> {
+    const settings = await this.getSettings();
+    return settings.customFiltersEnabled;
+  }
+
+  async setCustomFiltersEnabled(enabled: boolean): Promise<void> {
+    const settings = await this.getSettings();
+    settings.customFiltersEnabled = enabled;
+    await this.saveSettings(settings);
+    this.clearCache();
+  }
+
+  async getCustomFiltersText(): Promise<string> {
+    const settings = await this.getSettings();
+    return settings.customFiltersText;
+  }
+
+  async setCustomFiltersText(text: string): Promise<void> {
+    const settings = await this.getSettings();
+    settings.customFiltersText = this.normalizeCustomFiltersTextValue(text);
+    await this.saveSettings(settings);
+    this.clearCache();
+  }
+
+  async appendCustomFilterLine(line: string): Promise<boolean> {
+    const normalized = this.normalizeFilterLine(line);
+    if (!normalized) {
+      return false;
+    }
+
+    const settings = await this.getSettings();
+    const existingLines = settings.customFiltersText
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    if (existingLines.includes(normalized)) {
+      return true;
+    }
+
+    const nextText = settings.customFiltersText.trim();
+    settings.customFiltersText = nextText
+      ? `${nextText}\n${normalized}`
+      : normalized;
+    await this.saveSettings(settings);
+    this.clearCache();
+    return true;
+  }
+
+  async getMatchingCustomFilterSelectors(url: string): Promise<string[]> {
+    const settings = await this.getSettings();
+    if (!settings.customFiltersEnabled) {
+      return [];
+    }
+
+    const hostname = this.extractHostname(url);
+    if (!hostname) {
+      return [];
+    }
+
+    const rules = this.parseCustomFilterRules(settings.customFiltersText);
+    const included = new Set<string>();
+    const exceptions = new Set<string>();
+
+    for (const rule of rules) {
+      if (!this.ruleMatchesHostname(rule, hostname)) {
+        continue;
+      }
+
+      if (rule.exception) {
+        exceptions.add(rule.selector);
+      } else {
+        included.add(rule.selector);
+      }
+    }
+
+    for (const selector of exceptions) {
+      included.delete(selector);
+    }
+
+    return Array.from(included);
+  }
+
+  async getSettingsSnapshot(): Promise<WebsiteManagementSettings> {
+    const settings = await this.getSettings();
+    return {
+      ...settings,
+      rules: [...settings.rules],
+    };
+  }
+
+  async replaceSettings(settings: any): Promise<void> {
+    const normalized = this.normalizeSettings(settings);
+    await this.saveSettings(normalized);
+    this.clearCache();
+  }
+
   private async getSettings(): Promise<WebsiteManagementSettings> {
     if (this.settingsCache) {
       return this.settingsCache;
     }
 
     try {
-      // 首先尝试获取新的设置
       const result = await browser.storage.sync.get(STORAGE_KEY);
       if (result && result[STORAGE_KEY]) {
-        const settings = JSON.parse(result[STORAGE_KEY]);
-        // 修复 Date 对象的反序列化
-        if (settings.rules) {
-          settings.rules = settings.rules.map((rule: any) => ({
-            ...rule,
-            createdAt: new Date(rule.createdAt),
-          }));
-        }
-        this.settingsCache = settings;
+        const parsed = JSON.parse(result[STORAGE_KEY]);
+        const normalized = this.normalizeSettings(parsed);
+        this.settingsCache = normalized;
         this.cacheTimestamp = Date.now();
-        return settings;
+        return normalized;
       }
 
-      // 如果没有新设置，尝试迁移旧的黑名单数据
       const legacyResult = await browser.storage.sync.get(LEGACY_BLACKLIST_KEY);
       if (legacyResult && legacyResult[LEGACY_BLACKLIST_KEY]) {
         const legacySettings: BlacklistSettings = JSON.parse(
@@ -233,21 +278,343 @@ export class WebsiteManager {
         );
         const migratedSettings = await this.migrateLegacyData(legacySettings);
         this.settingsCache = migratedSettings;
+        this.cacheTimestamp = Date.now();
         return migratedSettings;
       }
 
-      this.settingsCache = DEFAULT_SETTINGS;
-      return DEFAULT_SETTINGS;
+      this.settingsCache = { ...DEFAULT_SETTINGS };
+      this.cacheTimestamp = Date.now();
+      return this.settingsCache;
     } catch (error) {
       console.error('获取网站管理设置失败:', error);
-      this.settingsCache = DEFAULT_SETTINGS;
-      return DEFAULT_SETTINGS;
+      this.settingsCache = { ...DEFAULT_SETTINGS };
+      this.cacheTimestamp = Date.now();
+      return this.settingsCache;
     }
   }
 
-  /**
-   * 迁移旧的黑名单数据
-   */
+  private normalizeSettings(raw: any): WebsiteManagementSettings {
+    const rules: WebsiteRule[] = Array.isArray(raw?.rules)
+      ? raw.rules
+          .map((rule: any) => this.normalizeWebsiteRule(rule))
+          .filter((rule: WebsiteRule | null): rule is WebsiteRule => !!rule)
+      : [];
+
+    const customFiltersText = this.normalizeCustomFiltersTextFromUnknown(raw);
+
+    return {
+      rules,
+      customFiltersEnabled: raw?.customFiltersEnabled !== false,
+      customFiltersText,
+    };
+  }
+
+  private normalizeWebsiteRule(raw: any): WebsiteRule | null {
+    const pattern = typeof raw?.pattern === 'string' ? raw.pattern.trim() : '';
+    if (!pattern) return null;
+    const type: WebsiteRuleType =
+      raw?.type === 'whitelist' ? 'whitelist' : 'blacklist';
+
+    return {
+      id: typeof raw?.id === 'string' && raw.id ? raw.id : this.generateId(),
+      pattern,
+      type,
+      enabled: raw?.enabled !== false,
+      createdAt: this.parseDate(raw?.createdAt),
+      description:
+        typeof raw?.description === 'string' ? raw.description : undefined,
+    };
+  }
+
+  private normalizeCustomFiltersTextFromUnknown(raw: any): string {
+    if (typeof raw?.customFiltersText === 'string') {
+      return this.normalizeCustomFiltersTextValue(raw.customFiltersText);
+    }
+
+    if (Array.isArray(raw?.customFilters)) {
+      return this.convertLegacyCustomFiltersToText(raw.customFilters);
+    }
+
+    return '';
+  }
+
+  private convertLegacyCustomFiltersToText(rawFilters: any[]): string {
+    const lines: string[] = [];
+    for (const rawFilter of rawFilters) {
+      if (rawFilter?.enabled === false) {
+        continue;
+      }
+
+      const selector =
+        typeof rawFilter?.selector === 'string'
+          ? rawFilter.selector.trim()
+          : '';
+      if (!selector || !this.isValidSelector(selector)) {
+        continue;
+      }
+
+      const scopeType =
+        rawFilter?.scopeType === 'pattern' ? 'pattern' : 'hostname';
+      const scopeValue =
+        typeof rawFilter?.scopeValue === 'string' ? rawFilter.scopeValue : '';
+
+      if (scopeType === 'pattern') {
+        const host = this.extractHostnameFromPattern(scopeValue);
+        if (host) {
+          lines.push(`${host}##${selector}`);
+          continue;
+        }
+      }
+
+      const hostname = this.normalizeHostname(scopeValue);
+      if (!hostname) {
+        continue;
+      }
+
+      lines.push(`${hostname}##${selector}`);
+    }
+
+    return this.normalizeCustomFiltersTextValue(lines.join('\n'));
+  }
+
+  private normalizeCustomFiltersTextValue(text: string): string {
+    if (!text) {
+      return '';
+    }
+
+    return text
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .join('\n')
+      .trim();
+  }
+
+  private normalizeFilterLine(line: string): string | null {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const marker = trimmed.includes('#@#')
+      ? '#@#'
+      : trimmed.includes('##')
+        ? '##'
+        : '';
+    if (!marker) {
+      return null;
+    }
+
+    const markerIndex = trimmed.indexOf(marker);
+    const domainPart = trimmed.slice(0, markerIndex).trim();
+    const selector = trimmed.slice(markerIndex + marker.length).trim();
+    if (!selector || !this.isValidSelector(selector)) {
+      return null;
+    }
+
+    if (!domainPart) {
+      return `${marker}${selector}`;
+    }
+
+    const normalizedDomains = domainPart
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (normalizedDomains.length === 0) {
+      return `${marker}${selector}`;
+    }
+
+    return `${normalizedDomains.join(',')}${marker}${selector}`;
+  }
+
+  private parseCustomFilterRules(text: string): ParsedCustomFilterRule[] {
+    const rules: ParsedCustomFilterRule[] = [];
+    const lines = text.replace(/\r\n/g, '\n').split('\n');
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('!') || line.startsWith('[')) {
+        continue;
+      }
+
+      const marker = line.includes('#@#')
+        ? '#@#'
+        : line.includes('##')
+          ? '##'
+          : '';
+      if (!marker) {
+        continue;
+      }
+
+      const markerIndex = line.indexOf(marker);
+      const domainPart = line.slice(0, markerIndex).trim();
+      const selector = line.slice(markerIndex + marker.length).trim();
+      if (!selector || !this.isValidSelector(selector)) {
+        continue;
+      }
+
+      const domains = domainPart
+        ? domainPart
+            .split(',')
+            .map((item) => this.parseDomainPart(item))
+            .filter(
+              (item: ParsedDomainPart | null): item is ParsedDomainPart =>
+                !!item,
+            )
+        : [];
+
+      rules.push({
+        domains,
+        selector,
+        exception: marker === '#@#',
+      });
+    }
+
+    return rules;
+  }
+
+  private parseDomainPart(rawPart: string): ParsedDomainPart | null {
+    const trimmed = rawPart.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const negated = trimmed.startsWith('~');
+    let pattern = negated ? trimmed.slice(1).trim() : trimmed;
+    if (!pattern) {
+      return null;
+    }
+
+    if (pattern.startsWith('||')) {
+      pattern = pattern.slice(2);
+    } else if (pattern.startsWith('|')) {
+      pattern = pattern.slice(1);
+    }
+
+    pattern = pattern.replace(/\^+$/, '');
+    pattern = pattern.replace(/^https?:\/\//i, '');
+    pattern = pattern.split('/')[0] || pattern;
+    pattern = pattern.replace(/:\d+$/, '');
+    pattern = pattern.toLowerCase();
+
+    if (!pattern) {
+      return null;
+    }
+
+    return {
+      pattern,
+      negated,
+    };
+  }
+
+  private ruleMatchesHostname(
+    rule: ParsedCustomFilterRule,
+    hostname: string,
+  ): boolean {
+    if (rule.domains.length === 0) {
+      return true;
+    }
+
+    let hasPositive = false;
+    let positiveMatched = false;
+
+    for (const domain of rule.domains) {
+      const matched = this.hostMatchesPattern(hostname, domain.pattern);
+      if (domain.negated && matched) {
+        return false;
+      }
+
+      if (!domain.negated) {
+        hasPositive = true;
+        if (matched) {
+          positiveMatched = true;
+        }
+      }
+    }
+
+    if (!hasPositive) {
+      return true;
+    }
+
+    return positiveMatched;
+  }
+
+  private hostMatchesPattern(hostname: string, pattern: string): boolean {
+    if (!hostname || !pattern) {
+      return false;
+    }
+
+    if (pattern === '*') {
+      return true;
+    }
+
+    if (pattern.includes('*')) {
+      const escaped = pattern.replace(
+        /[.+?^${}()|[\]\\]/g,
+        (char) => `\\${char}`,
+      );
+      const regex = new RegExp(`^${escaped.replace(/\*/g, '.*')}$`, 'i');
+      return regex.test(hostname);
+    }
+
+    return hostname === pattern || hostname.endsWith(`.${pattern}`);
+  }
+
+  private isValidSelector(selector: string): boolean {
+    try {
+      document.querySelector(selector);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private parseDate(value: unknown): Date {
+    if (value instanceof Date) return value;
+    const parsed = new Date((value as string | number | Date) ?? Date.now());
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  }
+
+  private extractHostname(url: string): string {
+    try {
+      return new URL(url).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  }
+
+  private extractHostnameFromPattern(pattern: string): string {
+    const value = pattern.trim();
+    if (!value) {
+      return '';
+    }
+
+    if (value.includes('://')) {
+      try {
+        const url = new URL(value);
+        return this.normalizeHostname(url.hostname);
+      } catch {
+        return '';
+      }
+    }
+
+    const normalized = value
+      .replace(/^[*]+:\/\//, '')
+      .replace(/^https?:\/\//i, '')
+      .split('/')[0]
+      .replace(/^\*\./, '');
+
+    return this.normalizeHostname(normalized);
+  }
+
+  private normalizeHostname(hostname: string): string {
+    return hostname
+      .trim()
+      .toLowerCase()
+      .replace(/^\.+/, '')
+      .replace(/:\d+$/, '');
+  }
+
   private async migrateLegacyData(
     legacySettings: BlacklistSettings,
   ): Promise<WebsiteManagementSettings> {
@@ -255,7 +622,7 @@ export class WebsiteManager {
       (pattern) => ({
         id: this.generateId(),
         pattern,
-        type: 'blacklist' as const,
+        type: 'blacklist',
         enabled: true,
         createdAt: new Date(),
         description: '从黑名单迁移',
@@ -263,41 +630,32 @@ export class WebsiteManager {
     );
 
     const newSettings: WebsiteManagementSettings = {
+      ...DEFAULT_SETTINGS,
       rules: migratedRules,
     };
 
-    // 保存迁移后的数据
     await this.saveSettings(newSettings);
-
     return newSettings;
   }
 
-  /**
-   * 保存设置
-   */
   private async saveSettings(
     settings: WebsiteManagementSettings,
   ): Promise<void> {
     try {
-      const serializedSettings = JSON.stringify(settings);
+      const normalized = this.normalizeSettings(settings);
+      const serializedSettings = JSON.stringify(normalized);
       await browser.storage.sync.set({ [STORAGE_KEY]: serializedSettings });
-      this.settingsCache = settings;
-      this.cacheTimestamp = Date.now(); // 更新缓存
+      this.settingsCache = normalized;
+      this.cacheTimestamp = Date.now();
     } catch (error) {
       console.error('保存网站管理设置失败:', error);
     }
   }
 
-  /**
-   * 生成唯一ID
-   */
   private generateId(): string {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2);
+    return Date.now().toString(36) + Math.random().toString(36).slice(2);
   }
 
-  /**
-   * 清除缓存
-   */
   clearCache(): void {
     this.settingsCache = null;
     this.cacheTimestamp = null;

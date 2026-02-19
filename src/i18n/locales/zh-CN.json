@@ -32,6 +32,7 @@
     "saveSettingsFailed": "保存设置失败",
     "getHotkeyFailed": "获取当前快捷键失败",
     "checkHotkeyFailed": "检查快捷键状态失败",
+    "startElementPickerFailed": "启动元素选择模式失败",
     "actionFeedback": {
       "network": "网络异常，请检查连接后重试",
       "business": "服务处理失败，请稍后重试",
@@ -46,7 +47,10 @@
     "switchConfigFailed": "切换配置失败"
   },
   "actions": {
-    "translate": "翻译"
+    "translate": "翻译",
+    "enterElementPickerMode": "进入元素选择模式",
+    "startingPicker": "正在启动选择器...",
+    "enableCustomFiltersFirst": "请先启用我的自定义过滤器"
   },
   "language": {
     "nativeLanguage": "母语",
@@ -159,7 +163,34 @@
     "blacklistCount": "黑名单: {count}",
     "whitelistCount": "白名单: {count}",
     "confirmDeleteRule": "确定要删除这个规则吗？",
-    "confirmDeleteSelected": "确定要删除选中的 {count} 个规则吗？"
+    "confirmDeleteSelected": "确定要删除选中的 {count} 个规则吗？",
+    "myFiltersTitle": "我的过滤器",
+    "myFiltersDescription": "管理自定义元素隐藏规则。该规则与翻译黑白名单独立。",
+    "enableMyCustomFilters": "启用我的自定义过滤器",
+    "myFiltersTextareaPlaceholder": "example.com##.ad-banner\nexample.com##.fixed-bottom.navbar-light",
+    "myFiltersHint": "每行一条规则，格式为 domain##selector。以 ! 开头可写注释。",
+    "applyFiltersText": "应用",
+    "revertFiltersText": "还原",
+    "addCustomFilter": "添加",
+    "searchCustomFilters": "搜索自定义过滤器...",
+    "scopeType": "作用范围类型",
+    "scopeValue": "作用范围值",
+    "scopeHostname": "域名",
+    "scopePattern": "URL 模式",
+    "scopeHostnamePlaceholder": "example.com",
+    "scopePatternPlaceholder": "*://example.com/*",
+    "selector": "选择器",
+    "selectorPlaceholder": "例如 .sidebar-ads, #sponsor-banner",
+    "descriptionPlaceholder": "可选备注",
+    "source": "来源",
+    "sourcePicker": "元素选择器",
+    "sourceManual": "手动添加",
+    "noCustomFilters": "暂无自定义过滤器",
+    "noMatchingCustomFilters": "未找到匹配的自定义过滤器",
+    "confirmDeleteCustomFilter": "确定要删除这条自定义过滤器吗？",
+    "customFiltersCount": "自定义过滤器总数: {count}",
+    "customFiltersEnabledCount": "已启用: {count}",
+    "customFiltersLineCount": "有效规则行: {count}"
   },
   "websiteRuleDialog": {
     "editTitle": "编辑网站规则",
@@ -575,6 +606,13 @@
     "title": "词典",
     "enZh": "英汉词典",
     "enEn": "英英词典",
+    "jaEn": "日英词典",
+    "koEn": "韩英词典",
+    "deEn": "德英词典",
+    "ruEn": "俄英词典",
+    "translation": "翻译",
+    "definitions": "释义",
+    "pronunciation": "发音",
     "detail": "详细释义",
     "grammar": {
       "past": "过去式",

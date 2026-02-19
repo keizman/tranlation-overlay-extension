@@ -22,6 +22,7 @@ import {
 import { StorageService } from '@/src/modules/core/storage';
 import { notifySettingsChanged } from '@/src/modules/core/messaging';
 import { languageService } from '@/src/modules/core/translation/LanguageService';
+import { WebsiteManager } from '@/src/modules/options/website-management/manager';
 import {
   ExternalLink,
   Zap as ZapIcon,
@@ -35,9 +36,12 @@ const { t } = useI18n();
 
 // 服务实例
 const storageService = StorageService.getInstance();
+const websiteManager = new WebsiteManager();
 
 const settings = ref<UserSettings>({ ...DEFAULT_SETTINGS });
 const hasUpdate = ref(false);
+const customFiltersEnabled = ref(true);
+const enteringPicker = ref(false);
 
 onMounted(async () => {
   const loadedSettings = await storageService.getUserSettings();
@@ -75,6 +79,13 @@ onMounted(async () => {
 
   // 检查是否有更新
   await checkForUpdates();
+
+  try {
+    customFiltersEnabled.value = await websiteManager.isCustomFiltersEnabled();
+  } catch (error) {
+    console.error('Failed to read custom filter status:', error);
+    customFiltersEnabled.value = true;
+  }
 });
 
 // API测试状态
@@ -164,6 +175,9 @@ const showSavedMessage = (message: string) => {
   setTimeout(() => (saveMessage.value = ''), 2000);
 };
 
+const START_PICKER_PROXY_MESSAGE = 'START_ELEMENT_PICKER_MODE';
+const START_PICKER_CONTENT_MESSAGE = 'start-element-picker-mode';
+
 const handleTranslate = async () => {
   try {
     const tabs = await browser.tabs.query({
@@ -182,6 +196,95 @@ const handleTranslate = async () => {
     console.error(t('errors.manualTranslateFailed'), error);
     showSavedMessage(t('errors.manualTranslateFailed'));
   }
+};
+
+const handleEnterElementPicker = async () => {
+  if (!customFiltersEnabled.value) {
+    showSavedMessage(t('actions.enableCustomFiltersFirst'));
+    return;
+  }
+
+  enteringPicker.value = true;
+  try {
+    console.info('[PickerFlow][Popup] Start picker requested');
+    const proxyResponse = await requestPickerStartViaBackground();
+    if (proxyResponse?.success === true) {
+      console.info('[PickerFlow][Popup] Picker started via background', {
+        tabId: proxyResponse.tabId,
+      });
+      closePopupSafely();
+      return;
+    }
+
+    if (proxyResponse?.success === false && proxyResponse.error) {
+      console.info('[PickerFlow][Popup] Background rejected picker start', {
+        error: proxyResponse.error,
+        tabId: proxyResponse.tabId,
+      });
+      showSavedMessage(proxyResponse.error);
+      return;
+    }
+
+    const directResponse = await requestPickerStartDirectly();
+    if (directResponse?.success === false) {
+      showSavedMessage(
+        directResponse.error || t('errors.startElementPickerFailed'),
+      );
+      return;
+    }
+
+    console.info('[PickerFlow][Popup] Picker started via direct tab message');
+    closePopupSafely();
+  } catch (error) {
+    console.error('[PickerFlow][Popup] Picker start failed', error);
+    showSavedMessage(t('errors.startElementPickerFailed'));
+  } finally {
+    enteringPicker.value = false;
+  }
+};
+
+const requestPickerStartViaBackground = async (): Promise<any> => {
+  try {
+    return await browser.runtime.sendMessage({
+      type: START_PICKER_PROXY_MESSAGE,
+    });
+  } catch (error) {
+    console.info('[PickerFlow][Popup] Background proxy unavailable', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+};
+
+const requestPickerStartDirectly = async (): Promise<any> => {
+  const tabs = await browser.tabs.query({
+    active: true,
+    currentWindow: true,
+  });
+
+  if (!tabs[0]?.id) {
+    return {
+      success: false,
+      error: t('errors.startElementPickerFailed'),
+    };
+  }
+
+  return browser.tabs.sendMessage(tabs[0].id, {
+    type: START_PICKER_CONTENT_MESSAGE,
+  });
+};
+
+const closePopupSafely = (): void => {
+  try {
+    window.close();
+  } catch {
+    // no-op
+  }
+  window.setTimeout(() => {
+    if (!document.hidden) {
+      window.location.href = 'about:blank';
+    }
+  }, 120);
 };
 
 const openAdvancedSettings = () => {
@@ -712,31 +815,47 @@ const openTTSSettings = () => {
             </span>
           </p>
         </div>
-        <button
-          class="footer-settings-btn"
-          @click="openAdvancedSettings"
-          :title="$t('footer.settings')"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
+        <div class="footer-action-group">
+          <button
+            @click="handleEnterElementPicker"
+            class="footer-picker-btn"
+            :disabled="enteringPicker || !customFiltersEnabled"
+            :title="$t('actions.enterElementPickerMode')"
           >
-            <path
-              d="M12 15a3 3 0 100-6 3 3 0 000 6z"
-              stroke="currentColor"
-              stroke-width="2"
-            />
-            <path
-              d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"
-              stroke="currentColor"
-              stroke-width="2"
-            />
-          </svg>
-          <span class="footer-settings-text">{{ $t('footer.settings') }}</span>
-        </button>
+            {{
+              enteringPicker
+                ? $t('actions.startingPicker')
+                : $t('actions.enterElementPickerMode')
+            }}
+          </button>
+          <button
+            class="footer-settings-btn"
+            @click="openAdvancedSettings"
+            :title="$t('footer.settings')"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M12 15a3 3 0 100-6 3 3 0 000 6z"
+                stroke="currentColor"
+                stroke-width="2"
+              />
+              <path
+                d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"
+                stroke="currentColor"
+                stroke-width="2"
+              />
+            </svg>
+            <span class="footer-settings-text">
+              {{ $t('footer.settings') }}
+            </span>
+          </button>
+        </div>
       </div>
     </footer>
   </div>
@@ -803,6 +922,7 @@ const openTTSSettings = () => {
 }
 
 header {
+  position: relative;
   text-align: center;
   margin-bottom: 16px;
 }
@@ -836,6 +956,9 @@ header {
 }
 
 .header-actions {
+  position: absolute;
+  top: 15px;
+  right: 15px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -870,9 +993,6 @@ header {
 }
 
 .manual-translate-btn {
-  position: absolute;
-  top: 15px;
-  right: 15px;
   background: var(--primary-color);
   color: white;
   border: none;
@@ -885,6 +1005,31 @@ header {
 
 .manual-translate-btn:hover {
   background: var(--primary-hover-color);
+}
+
+.manual-translate-btn:disabled,
+.footer-picker-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.footer-picker-btn {
+  background: var(--card-bg-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 0.2s,
+    border-color 0.2s;
+}
+
+.footer-picker-btn:hover {
+  background: var(--border-color);
+  border-color: var(--primary-color);
 }
 
 .advanced-settings-btn {
@@ -1272,6 +1417,12 @@ footer p {
   justify-content: space-between;
   gap: 8px;
   margin-top: 8px;
+}
+
+.footer-action-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .footer-settings-btn {

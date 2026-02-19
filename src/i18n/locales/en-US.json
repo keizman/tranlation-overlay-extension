@@ -32,6 +32,7 @@
     "saveSettingsFailed": "Failed to save settings",
     "getHotkeyFailed": "Failed to get current hotkey",
     "checkHotkeyFailed": "Failed to check hotkey status",
+    "startElementPickerFailed": "Failed to start element picker mode",
     "actionFeedback": {
       "network": "Network error. Please check your connection and try again.",
       "business": "Service request failed. Please try again later.",
@@ -46,7 +47,10 @@
     "switchConfigFailed": "Failed to switch configuration"
   },
   "actions": {
-    "translate": "Translate"
+    "translate": "Translate",
+    "enterElementPickerMode": "Enter element picker mode",
+    "startingPicker": "Starting picker...",
+    "enableCustomFiltersFirst": "Please enable My custom filters first"
   },
   "language": {
     "nativeLanguage": "Native Language",
@@ -159,7 +163,34 @@
     "blacklistCount": "Blacklist: {count}",
     "whitelistCount": "Whitelist: {count}",
     "confirmDeleteRule": "Are you sure you want to delete this rule?",
-    "confirmDeleteSelected": "Are you sure you want to delete the selected {count} rules?"
+    "confirmDeleteSelected": "Are you sure you want to delete the selected {count} rules?",
+    "myFiltersTitle": "My filters",
+    "myFiltersDescription": "Manage your custom element hiding rules. Rules are independent from translation blacklist/whitelist.",
+    "enableMyCustomFilters": "Enable my custom filters",
+    "myFiltersTextareaPlaceholder": "example.com##.ad-banner\nexample.com##.fixed-bottom.navbar-light",
+    "myFiltersHint": "One rule per line. Use domain##selector. Prefix with ! for comments.",
+    "applyFiltersText": "Apply",
+    "revertFiltersText": "Revert",
+    "addCustomFilter": "Add",
+    "searchCustomFilters": "Search custom filters...",
+    "scopeType": "Scope Type",
+    "scopeValue": "Scope Value",
+    "scopeHostname": "Hostname",
+    "scopePattern": "URL Pattern",
+    "scopeHostnamePlaceholder": "example.com",
+    "scopePatternPlaceholder": "*://example.com/*",
+    "selector": "Selector",
+    "selectorPlaceholder": "e.g. .sidebar-ads, #sponsor-banner",
+    "descriptionPlaceholder": "Optional note",
+    "source": "Source",
+    "sourcePicker": "Picker",
+    "sourceManual": "Manual",
+    "noCustomFilters": "No custom filters yet",
+    "noMatchingCustomFilters": "No matching custom filters found",
+    "confirmDeleteCustomFilter": "Are you sure you want to delete this custom filter?",
+    "customFiltersCount": "Total custom filters: {count}",
+    "customFiltersEnabledCount": "Enabled: {count}",
+    "customFiltersLineCount": "{count} active lines"
   },
   "websiteRuleDialog": {
     "editTitle": "Edit Website Rule",
@@ -565,6 +596,13 @@
     "title": "Dictionary",
     "enZh": "English-Chinese Dictionary",
     "enEn": "English-English Dictionary",
+    "jaEn": "Japanese-English Dictionary",
+    "koEn": "Korean-English Dictionary",
+    "deEn": "German-English Dictionary",
+    "ruEn": "Russian-English Dictionary",
+    "translation": "Translation",
+    "definitions": "Definitions",
+    "pronunciation": "Pronunciation",
     "detail": "Detailed Definition",
     "grammar": {
       "past": "Past",

@@ -32,6 +32,7 @@ import { WordCardManager } from '../read/wordCard';
 import { createModuleLogger } from '../shared/utils/Report';
 import { DEFAULT_FLOATING_BALL_CONFIG } from '../shared/constants/defaults';
 import { UserFeedbackService } from './services/UserFeedbackService';
+import { CustomFilterService } from './services/CustomFilterService';
 
 const logger = createModuleLogger('ContentManager');
 
@@ -253,9 +254,11 @@ export class ContentManager implements IContentManager {
   private paragraphService = ParagraphTranslationService.getInstance();
   private wordCardManager?: WordCardManager;
   private userFeedback: UserFeedbackService;
+  private customFilterService: CustomFilterService;
   constructor() {
     this.configurationService = new ConfigurationService();
     this.userFeedback = UserFeedbackService.getInstance();
+    this.customFilterService = new CustomFilterService();
   }
 
   /**
@@ -266,6 +269,17 @@ export class ContentManager implements IContentManager {
       logger.log('ContentManager init started', {
         url: window.location.href,
       });
+
+      try {
+        await this.customFilterService.init();
+      } catch (error) {
+        logger.warn(
+          'Custom filter service init failed, continue without picker',
+          {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+      }
 
       // 检查网站规则
       const websiteStatus = await this.checkWebsiteStatus();
@@ -327,6 +341,7 @@ export class ContentManager implements IContentManager {
    */
   destroy(): void {
     try {
+      this.customFilterService.destroy();
       this.listenerService?.destroy();
       this.services?.lazyLoadingService?.destroy();
       this.paragraphTTSService?.destroy();

@@ -28,7 +28,8 @@
     "notifyConfigChangeFailed": "Error al notificar el cambio de configuración",
     "saveSettingsFailed": "Error al guardar los ajustes",
     "getHotkeyFailed": "Error al obtener el atajo de teclado actual",
-    "checkHotkeyFailed": "Error al comprobar el estado del atajo de teclado"
+    "checkHotkeyFailed": "Error al comprobar el estado del atajo de teclado",
+    "startElementPickerFailed": "Error al iniciar el modo selector de elementos"
   },
   "settings": {
     "selectLanguageFirst": "Por favor, selecciona un idioma primero",
@@ -37,7 +38,10 @@
     "switchConfigFailed": "Error al cambiar de configuración"
   },
   "actions": {
-    "translate": "Traducir"
+    "translate": "Traducir",
+    "enterElementPickerMode": "Entrar en modo selector de elementos",
+    "startingPicker": "Iniciando selector...",
+    "enableCustomFiltersFirst": "Primero habilita Mis filtros personalizados"
   },
   "language": {
     "nativeLanguage": "Idioma Nativo",
@@ -150,7 +154,34 @@
     "blacklistCount": "Lista Negra: {count}",
     "whitelistCount": "Lista Blanca: {count}",
     "confirmDeleteRule": "¿Estás seguro de que quieres eliminar esta regla?",
-    "confirmDeleteSelected": "¿Estás seguro de que quieres eliminar las {count} reglas seleccionadas?"
+    "confirmDeleteSelected": "¿Estás seguro de que quieres eliminar las {count} reglas seleccionadas?",
+    "myFiltersTitle": "Mis filtros",
+    "myFiltersDescription": "Administra tus reglas personalizadas para ocultar elementos. Son independientes de la lista blanca/negra de traducción.",
+    "enableMyCustomFilters": "Habilitar mis filtros personalizados",
+    "myFiltersTextareaPlaceholder": "example.com##.ad-banner\nexample.com##.fixed-bottom.navbar-light",
+    "myFiltersHint": "Una regla por línea. Usa domain##selector. Prefijo ! para comentarios.",
+    "applyFiltersText": "Aplicar",
+    "revertFiltersText": "Revertir",
+    "addCustomFilter": "Agregar",
+    "searchCustomFilters": "Buscar filtros personalizados...",
+    "scopeType": "Tipo de alcance",
+    "scopeValue": "Valor de alcance",
+    "scopeHostname": "Host",
+    "scopePattern": "Patrón URL",
+    "scopeHostnamePlaceholder": "example.com",
+    "scopePatternPlaceholder": "*://example.com/*",
+    "selector": "Selector",
+    "selectorPlaceholder": "ej. .sidebar-ads, #sponsor-banner",
+    "descriptionPlaceholder": "Nota opcional",
+    "source": "Origen",
+    "sourcePicker": "Selector",
+    "sourceManual": "Manual",
+    "noCustomFilters": "Aún no hay filtros personalizados",
+    "noMatchingCustomFilters": "No se encontraron filtros personalizados",
+    "confirmDeleteCustomFilter": "¿Seguro que quieres eliminar este filtro personalizado?",
+    "customFiltersCount": "Total de filtros personalizados: {count}",
+    "customFiltersEnabledCount": "Habilitados: {count}",
+    "customFiltersLineCount": "{count} líneas activas"
   },
   "websiteRuleDialog": {
     "editTitle": "Editar Regla de Sitio Web",
@@ -439,6 +470,28 @@
       "description": "Muestra el significado y la pronunciación de la palabra al pasar el ratón sobre el texto traducido.",
       "hotkey": "Ctrl+Pasar el ratón",
       "hotkeyDescription": "Muestra la ventana de definición solo al mantener pulsado Ctrl y pasar el ratón."
+    }
+  },
+  "wordCardUI": {
+    "title": "Diccionario",
+    "enZh": "Diccionario Inglés-Chino",
+    "enEn": "Diccionario Inglés-Inglés",
+    "jaEn": "Diccionario Japonés-Inglés",
+    "koEn": "Diccionario Coreano-Inglés",
+    "deEn": "Diccionario Alemán-Inglés",
+    "ruEn": "Diccionario Ruso-Inglés",
+    "translation": "Traducción",
+    "definitions": "Definiciones",
+    "pronunciation": "Pronunciación",
+    "detail": "Definición detallada",
+    "grammar": {
+      "past": "Pasado",
+      "pastParticiple": "Participio pasado",
+      "presentParticiple": "Participio presente",
+      "thirdPerson": "Tercera persona",
+      "plural": "Plural",
+      "comparative": "Comparativo",
+      "superlative": "Superlativo"
     }
   },
   "options": {

@@ -55,6 +55,14 @@ export interface ManualTranslateMessage {
   type: 'MANUAL_TRANSLATE';
 }
 
+export interface WebsiteManagementUpdatedMessage {
+  type: 'website_management_updated';
+}
+
+export interface StartElementPickerModeMessage {
+  type: 'START_ELEMENT_PICKER_MODE';
+}
+
 export interface SetSelectionBannerDisabledMessage {
   type: 'SET_SELECTION_BANNER_DISABLED';
   disabled: boolean;
@@ -84,6 +92,8 @@ export type BackgroundMessage =
   | SettingsUpdatedMessage
   | ApiConfigUpdatedMessage
   | ManualTranslateMessage
+  | WebsiteManagementUpdatedMessage
+  | StartElementPickerModeMessage
   | SetSelectionBannerDisabledMessage
   | AppLogBatchMessage;
 
@@ -274,6 +284,8 @@ export const MESSAGE_TYPES = {
   SETTINGS_UPDATED: 'settings_updated',
   API_CONFIG_UPDATED: 'api_config_updated',
   MANUAL_TRANSLATE: 'MANUAL_TRANSLATE',
+  WEBSITE_MANAGEMENT_UPDATED: 'website_management_updated',
+  START_ELEMENT_PICKER_MODE: 'START_ELEMENT_PICKER_MODE',
   SET_SELECTION_BANNER_DISABLED: 'SET_SELECTION_BANNER_DISABLED',
   APP_LOG_BATCH: 'APP_LOG_BATCH',
 } as const;

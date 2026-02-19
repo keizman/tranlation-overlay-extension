@@ -28,7 +28,8 @@
     "notifyConfigChangeFailed": "구성 변경 알림 실패",
     "saveSettingsFailed": "설정 저장 실패",
     "getHotkeyFailed": "현재 단축키 가져오기 실패",
-    "checkHotkeyFailed": "단축키 상태 확인 실패"
+    "checkHotkeyFailed": "단축키 상태 확인 실패",
+    "startElementPickerFailed": "요소 선택기 모드 시작 실패"
   },
   "settings": {
     "selectLanguageFirst": "먼저 언어를 선택하세요",
@@ -37,7 +38,10 @@
     "switchConfigFailed": "구성 전환 실패"
   },
   "actions": {
-    "translate": "번역"
+    "translate": "번역",
+    "enterElementPickerMode": "요소 선택기 모드 시작",
+    "startingPicker": "선택기 시작 중...",
+    "enableCustomFiltersFirst": "먼저 내 사용자 필터를 활성화하세요"
   },
   "language": {
     "nativeLanguage": "모국어",
@@ -150,7 +154,34 @@
     "blacklistCount": "블랙리스트: {count}",
     "whitelistCount": "화이트리스트: {count}",
     "confirmDeleteRule": "이 규칙을 삭제하시겠습니까?",
-    "confirmDeleteSelected": "선택한 {count}개의 규칙을 삭제하시겠습니까?"
+    "confirmDeleteSelected": "선택한 {count}개의 규칙을 삭제하시겠습니까?",
+    "myFiltersTitle": "내 필터",
+    "myFiltersDescription": "사용자 지정 요소 숨김 규칙을 관리합니다. 번역 블랙/화이트리스트와 독립적으로 동작합니다.",
+    "enableMyCustomFilters": "내 사용자 필터 사용",
+    "myFiltersTextareaPlaceholder": "example.com##.ad-banner\nexample.com##.fixed-bottom.navbar-light",
+    "myFiltersHint": "한 줄에 한 규칙. 형식: domain##selector. ! 로 주석 작성.",
+    "applyFiltersText": "적용",
+    "revertFiltersText": "되돌리기",
+    "addCustomFilter": "추가",
+    "searchCustomFilters": "사용자 필터 검색...",
+    "scopeType": "범위 유형",
+    "scopeValue": "범위 값",
+    "scopeHostname": "호스트명",
+    "scopePattern": "URL 패턴",
+    "scopeHostnamePlaceholder": "example.com",
+    "scopePatternPlaceholder": "*://example.com/*",
+    "selector": "선택자",
+    "selectorPlaceholder": "예: .sidebar-ads, #sponsor-banner",
+    "descriptionPlaceholder": "선택 메모",
+    "source": "출처",
+    "sourcePicker": "선택기",
+    "sourceManual": "수동",
+    "noCustomFilters": "사용자 필터가 없습니다",
+    "noMatchingCustomFilters": "일치하는 사용자 필터가 없습니다",
+    "confirmDeleteCustomFilter": "이 사용자 필터를 삭제하시겠습니까?",
+    "customFiltersCount": "사용자 필터 총계: {count}",
+    "customFiltersEnabledCount": "활성화됨: {count}",
+    "customFiltersLineCount": "활성 라인: {count}"
   },
   "websiteRuleDialog": {
     "editTitle": "웹사이트 규칙 편집",
@@ -439,6 +470,28 @@
       "description": "번역된 텍스트에 마우스를 올리면 단어 의미와 발음을 표시합니다.",
       "hotkey": "Ctrl+마우스 오버",
       "hotkeyDescription": "Ctrl 키를 누른 상태에서 마우스를 올려야만 단어 의미 상자를 표시합니다."
+    }
+  },
+  "wordCardUI": {
+    "title": "사전",
+    "enZh": "영중 사전",
+    "enEn": "영영 사전",
+    "jaEn": "일영 사전",
+    "koEn": "한영 사전",
+    "deEn": "독영 사전",
+    "ruEn": "러영 사전",
+    "translation": "번역",
+    "definitions": "뜻풀이",
+    "pronunciation": "발음",
+    "detail": "상세 정의",
+    "grammar": {
+      "past": "과거형",
+      "pastParticiple": "과거분사",
+      "presentParticiple": "현재분사",
+      "thirdPerson": "3인칭 단수",
+      "plural": "복수형",
+      "comparative": "비교급",
+      "superlative": "최상급"
     }
   },
   "options": {

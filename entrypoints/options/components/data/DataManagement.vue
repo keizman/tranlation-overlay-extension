@@ -71,15 +71,13 @@ const emit = defineEmits<{
 const exportSettings = async () => {
   try {
     const settings = await storageService.getUserSettings();
-    const websiteRules = await websiteManager.getRules();
+    const websiteSettings = await websiteManager.getSettingsSnapshot();
 
     const exportData = {
       exportTime: new Date().toISOString(),
-      version: '2.0', // 增加版本号以区分包含网站管理数据的新格式
+      version: '2.1', // 包含网站规则与自定义过滤器
       userSettings: settings,
-      websiteManagement: {
-        rules: websiteRules,
-      },
+      websiteManagement: websiteSettings,
     };
 
     const settingsJson = JSON.stringify(exportData, null, 2);
@@ -95,7 +93,7 @@ const exportSettings = async () => {
     emit(
       'saveMessage',
       t('dataManagement.exportSettings.success', {
-        count: websiteRules.length,
+        count: websiteSettings.rules.length,
       }),
       'success',
     );
@@ -132,28 +130,34 @@ const importSettings = async () => {
       let importStats = { settings: false, websiteRules: 0 };
 
       // 检查数据格式并导入
-      if (importedData.version === '2.0' && importedData.userSettings) {
+      if (
+        (importedData.version === '2.0' || importedData.version === '2.1') &&
+        importedData.userSettings
+      ) {
         // 新格式：包含完整数据
         await storageService.saveUserSettings(importedData.userSettings);
         importStats.settings = true;
 
-        // 导入网站管理数据
-        if (importedData.websiteManagement?.rules) {
-          // 清除现有缓存
-          websiteManager.clearCache();
-
-          // 导入网站规则
-          for (const rule of importedData.websiteManagement.rules) {
-            if (rule.pattern && rule.type) {
-              await websiteManager.addRule(
-                rule.pattern,
-                rule.type,
-                rule.description,
-              );
-              importStats.websiteRules++;
-            }
-          }
-        }
+        const importedWebsiteManagement = importedData.websiteManagement || {};
+        await websiteManager.replaceSettings({
+          rules: Array.isArray(importedWebsiteManagement.rules)
+            ? importedWebsiteManagement.rules
+            : [],
+          customFiltersEnabled:
+            importedWebsiteManagement.customFiltersEnabled !== false,
+          customFiltersText:
+            typeof importedWebsiteManagement.customFiltersText === 'string'
+              ? importedWebsiteManagement.customFiltersText
+              : '',
+          customFilters: Array.isArray(importedWebsiteManagement.customFilters)
+            ? importedWebsiteManagement.customFilters
+            : undefined,
+        });
+        importStats.websiteRules = Array.isArray(
+          importedWebsiteManagement.rules,
+        )
+          ? importedWebsiteManagement.rules.length
+          : 0;
 
         const message = t('dataManagement.importSettings.success');
         emit('saveMessage', message, 'success');

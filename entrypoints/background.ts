@@ -175,6 +175,14 @@ export default defineBackground(() => {
         handleContextMenuAction(message, sendResponse);
         return true; // 保持消息通道开放
 
+      case MessageType.WEBSITE_MANAGEMENT_UPDATED:
+        handleWebsiteManagementUpdated(sendResponse);
+        return true;
+
+      case MESSAGE_TYPES.START_ELEMENT_PICKER_MODE:
+        handleStartElementPickerMode(sendResponse);
+        return true;
+
       case MESSAGE_TYPES.SETTINGS_UPDATED:
       case MESSAGE_TYPES.API_CONFIG_UPDATED:
         handleSettingsUpdated(message, sendResponse);
@@ -341,6 +349,194 @@ export default defineBackground(() => {
           error: {
             message: error instanceof Error ? error.message : '未知错误',
           },
+        });
+      }
+    })();
+  }
+
+  function handleWebsiteManagementUpdated(
+    sendResponse: (response: any) => void,
+  ): void {
+    (async () => {
+      try {
+        const tabs = await browser.tabs.query({});
+        let delivered = 0;
+
+        await Promise.all(
+          tabs
+            .filter((tab) => typeof tab.id === 'number')
+            .map(async (tab) => {
+              try {
+                await browser.tabs.sendMessage(tab.id!, {
+                  type: MessageType.WEBSITE_MANAGEMENT_UPDATED,
+                });
+                delivered += 1;
+              } catch {
+                // ignore tabs without content scripts
+              }
+            }),
+        );
+
+        sendResponse({
+          success: true,
+          delivered,
+          totalTabs: tabs.length,
+        });
+      } catch (error) {
+        console.error(
+          '[Background] Website management update broadcast failed:',
+          error,
+        );
+        sendResponse({
+          success: false,
+          error: error instanceof Error ? error.message : '未知错误',
+        });
+      }
+    })();
+  }
+
+  function handleStartElementPickerMode(
+    sendResponse: (response: any) => void,
+  ): void {
+    (async () => {
+      const pickerMessage = { type: 'start-element-picker-mode' };
+      const isWebContentUrl = (url?: string): boolean => {
+        if (!url) return false;
+        return /^(https?:\/\/|file:\/\/)/i.test(url);
+      };
+
+      try {
+        const activeInFocusedWindow = await browser.tabs.query({
+          active: true,
+          lastFocusedWindow: true,
+        });
+
+        const activeAcrossWindows = await browser.tabs.query({
+          active: true,
+        });
+
+        const tabsInFocusedWindow = await browser.tabs.query({
+          lastFocusedWindow: true,
+        });
+
+        const allTabs = await browser.tabs.query({});
+
+        const mergedCandidates = [
+          ...activeInFocusedWindow,
+          ...activeAcrossWindows,
+          ...tabsInFocusedWindow,
+          ...allTabs,
+        ]
+          .filter((tab, index, list) => {
+            if (typeof tab.id !== 'number') return false;
+            return list.findIndex((item) => item.id === tab.id) === index;
+          })
+          .sort((a, b) => {
+            const score = (tab: {
+              url?: string;
+              active?: boolean;
+              lastAccessed?: number;
+            }): number => {
+              let value = 0;
+              if (isWebContentUrl(tab.url)) value += 100;
+              if (tab.active) value += 20;
+              if (typeof tab.lastAccessed === 'number') {
+                value += Math.min(10, Math.floor(tab.lastAccessed / 1_000_000));
+              }
+              if (
+                tab.url?.startsWith('moz-extension://') ||
+                tab.url?.startsWith('about:')
+              ) {
+                value -= 100;
+              }
+              return value;
+            };
+            return score(b) - score(a);
+          });
+
+        console.info('[PickerFlow][Background] Candidate tabs resolved', {
+          candidateCount: mergedCandidates.length,
+          candidates: mergedCandidates.map((tab) => ({
+            id: tab.id,
+            url: tab.url,
+          })),
+        });
+
+        for (const tab of mergedCandidates) {
+          if (typeof tab.id !== 'number') {
+            continue;
+          }
+
+          try {
+            const response = await browser.tabs.sendMessage(
+              tab.id,
+              pickerMessage,
+            );
+            console.info('[PickerFlow][Background] Picker message delivered', {
+              tabId: tab.id,
+              url: tab.url,
+              response,
+            });
+
+            if (response?.success === false) {
+              sendResponse({
+                success: false,
+                tabId: tab.id,
+                error:
+                  response.error ||
+                  'Element picker rejected by content script.',
+              });
+              return;
+            }
+
+            if (!tab.active) {
+              try {
+                await browser.tabs.update(tab.id, { active: true });
+                console.info('[PickerFlow][Background] Activated picker tab', {
+                  tabId: tab.id,
+                  url: tab.url,
+                });
+              } catch (activateError) {
+                console.warn(
+                  '[PickerFlow][Background] Failed to activate picker tab',
+                  {
+                    tabId: tab.id,
+                    url: tab.url,
+                    error:
+                      activateError instanceof Error
+                        ? activateError.message
+                        : String(activateError),
+                  },
+                );
+              }
+            }
+
+            sendResponse({
+              success: true,
+              tabId: tab.id,
+            });
+            return;
+          } catch (error) {
+            console.info('[PickerFlow][Background] Candidate tab skipped', {
+              tabId: tab.id,
+              url: tab.url,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+
+        sendResponse({
+          success: false,
+          error: 'No active web page was found to start element picker mode.',
+        });
+      } catch (error) {
+        console.error('[PickerFlow][Background] Picker start failed', error);
+        sendResponse({
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Failed to locate active tab for picker mode.',
         });
       }
     })();

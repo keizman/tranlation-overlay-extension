@@ -28,7 +28,8 @@
     "notifyConfigChangeFailed": "設定変更の通知に失敗しました",
     "saveSettingsFailed": "設定の保存に失敗しました",
     "getHotkeyFailed": "現在のホットキーの取得に失敗しました",
-    "checkHotkeyFailed": "ホットキーの状態確認に失敗しました"
+    "checkHotkeyFailed": "ホットキーの状態確認に失敗しました",
+    "startElementPickerFailed": "要素ピッカーモードの開始に失敗しました"
   },
   "settings": {
     "selectLanguageFirst": "まず言語を選択してください",
@@ -37,7 +38,10 @@
     "switchConfigFailed": "設定の切り替えに失敗しました"
   },
   "actions": {
-    "translate": "翻訳"
+    "translate": "翻訳",
+    "enterElementPickerMode": "要素ピッカーモードに入る",
+    "startingPicker": "ピッカーを開始中...",
+    "enableCustomFiltersFirst": "先に「My custom filters」を有効にしてください"
   },
   "language": {
     "nativeLanguage": "母国語",
@@ -150,7 +154,34 @@
     "blacklistCount": "ブラックリスト: {count}",
     "whitelistCount": "ホワイトリスト: {count}",
     "confirmDeleteRule": "このルールを削除してもよろしいですか？",
-    "confirmDeleteSelected": "選択した {count} 件のルールを削除してもよろしいですか？"
+    "confirmDeleteSelected": "選択した {count} 件のルールを削除してもよろしいですか？",
+    "myFiltersTitle": "My filters",
+    "myFiltersDescription": "要素を非表示にするカスタムルールを管理します。翻訳のブラック/ホワイトリストとは独立しています。",
+    "enableMyCustomFilters": "My custom filters を有効化",
+    "myFiltersTextareaPlaceholder": "example.com##.ad-banner\nexample.com##.fixed-bottom.navbar-light",
+    "myFiltersHint": "1 行に 1 ルール。形式: domain##selector。! でコメント。",
+    "applyFiltersText": "適用",
+    "revertFiltersText": "元に戻す",
+    "addCustomFilter": "追加",
+    "searchCustomFilters": "カスタムフィルターを検索...",
+    "scopeType": "対象タイプ",
+    "scopeValue": "対象値",
+    "scopeHostname": "ホスト名",
+    "scopePattern": "URL パターン",
+    "scopeHostnamePlaceholder": "example.com",
+    "scopePatternPlaceholder": "*://example.com/*",
+    "selector": "セレクター",
+    "selectorPlaceholder": "例: .sidebar-ads, #sponsor-banner",
+    "descriptionPlaceholder": "任意メモ",
+    "source": "ソース",
+    "sourcePicker": "ピッカー",
+    "sourceManual": "手動",
+    "noCustomFilters": "カスタムフィルターがありません",
+    "noMatchingCustomFilters": "一致するカスタムフィルターが見つかりません",
+    "confirmDeleteCustomFilter": "このカスタムフィルターを削除してもよろしいですか？",
+    "customFiltersCount": "カスタムフィルター合計: {count}",
+    "customFiltersEnabledCount": "有効: {count}",
+    "customFiltersLineCount": "有効行: {count}"
   },
   "websiteRuleDialog": {
     "editTitle": "ウェブサイトルールを編集",
@@ -439,6 +470,28 @@
       "description": "翻訳テキストにマウスをホバーすると単語の意味と発音を表示します",
       "hotkey": "Ctrl+マウスホバー",
       "hotkeyDescription": "Ctrlキーを押しながらホバーした時のみ単語意味ボックスを表示します"
+    }
+  },
+  "wordCardUI": {
+    "title": "辞書",
+    "enZh": "英中辞書",
+    "enEn": "英英辞書",
+    "jaEn": "日英辞書",
+    "koEn": "韓英辞書",
+    "deEn": "独英辞書",
+    "ruEn": "露英辞書",
+    "translation": "翻訳",
+    "definitions": "語義",
+    "pronunciation": "発音",
+    "detail": "詳細定義",
+    "grammar": {
+      "past": "過去形",
+      "pastParticiple": "過去分詞",
+      "presentParticiple": "現在分詞",
+      "thirdPerson": "三人称単数",
+      "plural": "複数形",
+      "comparative": "比較級",
+      "superlative": "最上級"
     }
   },
   "options": {
