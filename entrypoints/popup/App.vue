@@ -879,8 +879,11 @@ const openTTSSettings = () => {
   --select-option-text-color: #000;
   --select-option-bg-color: #fff;
 
-  width: 360px;
+  width: min(360px, 100%);
+  max-width: 360px;
   padding: 5px;
+  box-sizing: border-box;
+  margin: 0 auto;
   font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
   background-color: var(--bg-color);
   color: var(--text-color);
