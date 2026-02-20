@@ -353,22 +353,33 @@
                 </div>
               </div>
             </div>
-            <div class="my-filters-editor__viewport">
+            <div
+              class="my-filters-editor__viewport"
+              :style="editorViewportStyle"
+            >
               <pre
+                ref="editorHighlightRef"
                 class="my-filters-editor__highlight"
                 aria-hidden="true"
-                :style="{ transform: `translateY(-${editorScrollTop}px)` }"
+                :style="{
+                  transform: `translateY(-${editorScrollTop}px)`,
+                }"
                 v-html="highlightedCustomFiltersHtml"
               />
               <textarea
                 ref="editorTextareaRef"
                 v-model="customFiltersDraft"
                 rows="10"
+                wrap="soft"
                 spellcheck="false"
                 class="my-filters-editor__textarea"
+                :style="editorTextareaStyle"
                 @focus="handleCustomFiltersEditorFocus"
                 @blur="handleCustomFiltersEditorBlur"
                 @scroll="handleCustomFiltersEditorScroll"
+                @click="handleCustomFiltersEditorCaretChange"
+                @keyup="handleCustomFiltersEditorCaretChange"
+                @input="handleCustomFiltersEditorCaretChange"
               />
             </div>
           </div>
@@ -405,7 +416,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   Copy,
@@ -442,10 +460,16 @@ import WebsiteRuleDialog from './WebsiteRuleDialog.vue';
 
 const { t } = useI18n();
 const manager = new WebsiteManager();
+const BASE_EDITOR_HEIGHT_PX = 240;
+const MIN_EDITOR_HEIGHT_PX = 120;
 const EDITOR_LINE_HEIGHT_PX = 20;
-const MIN_EDITOR_COLUMNS = 16;
 const EDITOR_VISIBLE_TOP_GAP_PX = 72;
 const EDITOR_VISIBLE_BOTTOM_GAP_PX = 20;
+const EDITOR_FOCUS_SYNC_TICKS = 12;
+const EDITOR_FOCUS_SYNC_INTERVAL_MS = 90;
+const KEYBOARD_INSET_EXTRA_PX = 16;
+const KEYBOARD_FALLBACK_THRESHOLD_PX = 120;
+const KEYBOARD_MIN_MOBILE_INSET_PX = 180;
 
 const allRules = ref<WebsiteRule[]>([]);
 const customFiltersEnabled = ref(true);
@@ -485,13 +509,19 @@ const filteredRules = computed(() => {
 const hasCustomFiltersChanges = computed(
   () => customFiltersDraft.value !== customFiltersText.value,
 );
+const editorHighlightRef = ref<HTMLElement | null>(null);
 const editorTextareaRef = ref<HTMLTextAreaElement | null>(null);
 const editorScrollTop = ref(0);
-const editorColumns = ref(80);
 const keyboardInsetPx = ref(0);
 const editorFocused = ref(false);
 const scrollContainerRef = ref<HTMLElement | null>(null);
+const measuredLineHeights = ref<number[]>([]);
+let focusSyncTimer: number | null = null;
+let focusSyncTick = 0;
+let viewportHeightBaselinePx = 0;
 let editorResizeObserver: ResizeObserver | null = null;
+let lineHeightMeasureRafId: number | null = null;
+let wrapMeasureElement: HTMLDivElement | null = null;
 
 const customFiltersLineCount = computed(
   () =>
@@ -503,15 +533,17 @@ const customFiltersLineCount = computed(
 const editorLineMetrics = computed(() => {
   const lines = customFiltersDraft.value.split(/\r?\n/);
   const lineCount = Math.max(1, lines.length);
-  return Array.from({ length: lineCount }, (_, index) => {
-    const line = lines[index] ?? '';
-    const wrappedRows = getWrappedRows(line);
-    return {
-      number: index + 1,
-      rows: wrappedRows,
-      height: wrappedRows * EDITOR_LINE_HEIGHT_PX,
-    };
-  });
+  return Array.from({ length: lineCount }, (_, index) => ({
+    number: index + 1,
+    rows: Math.max(
+      1,
+      Math.ceil(
+        (measuredLineHeights.value[index] ?? EDITOR_LINE_HEIGHT_PX) /
+          EDITOR_LINE_HEIGHT_PX,
+      ),
+    ),
+    height: measuredLineHeights.value[index] ?? EDITOR_LINE_HEIGHT_PX,
+  }));
 });
 const highlightedCustomFiltersHtml = computed(() => {
   const normalizedText = customFiltersDraft.value.replace(/\r\n/g, '\n');
@@ -534,18 +566,45 @@ const pageRootStyle = computed(() => {
     paddingBottom: `${keyboardInsetPx.value}px`,
   };
 });
+const editorHeightPx = computed(() => {
+  if (keyboardInsetPx.value <= 0) {
+    return BASE_EDITOR_HEIGHT_PX;
+  }
+  return Math.max(
+    MIN_EDITOR_HEIGHT_PX,
+    BASE_EDITOR_HEIGHT_PX - keyboardInsetPx.value,
+  );
+});
+const editorViewportStyle = computed(() => ({
+  height: `${editorHeightPx.value}px`,
+  minHeight: `${editorHeightPx.value}px`,
+}));
+const editorTextareaStyle = computed(() => ({
+  height: `${editorHeightPx.value}px`,
+}));
 
 onMounted(async () => {
   await loadSettings();
   await nextTick();
   setupEditorMetricsObserver();
+  scheduleLineHeightMeasurement();
+  refreshViewportHeightBaseline();
   resolveScrollContainer();
   window.visualViewport?.addEventListener('resize', handleVisualViewportChange);
   window.visualViewport?.addEventListener('scroll', handleVisualViewportChange);
 });
 onBeforeUnmount(() => {
+  stopFocusSync();
+  if (lineHeightMeasureRafId !== null) {
+    window.cancelAnimationFrame(lineHeightMeasureRafId);
+    lineHeightMeasureRafId = null;
+  }
   editorResizeObserver?.disconnect();
   editorResizeObserver = null;
+  if (wrapMeasureElement?.parentNode) {
+    wrapMeasureElement.parentNode.removeChild(wrapMeasureElement);
+  }
+  wrapMeasureElement = null;
   window.removeEventListener('resize', handleWindowViewportResize);
   window.visualViewport?.removeEventListener(
     'resize',
@@ -556,6 +615,10 @@ onBeforeUnmount(() => {
     handleVisualViewportChange,
   );
   resetScrollPaddingBottom();
+});
+watch(customFiltersDraft, async () => {
+  await nextTick();
+  scheduleLineHeightMeasurement();
 });
 
 const loadSettings = async () => {
@@ -695,18 +758,22 @@ const focusCustomFiltersEditor = () => {
 };
 const handleCustomFiltersEditorFocus = () => {
   editorFocused.value = true;
+  refreshViewportHeightBaseline();
   resolveScrollContainer();
-  updateKeyboardInset();
-  scrollEditorIntoView();
-  window.setTimeout(() => {
-    updateKeyboardInset();
-    scrollEditorIntoView();
-  }, 220);
+  startFocusSync();
 };
 const handleCustomFiltersEditorBlur = () => {
   editorFocused.value = false;
+  stopFocusSync();
   keyboardInsetPx.value = 0;
+  refreshViewportHeightBaseline();
   resetScrollPaddingBottom();
+};
+const handleCustomFiltersEditorCaretChange = () => {
+  if (!editorFocused.value) {
+    return;
+  }
+  scrollEditorIntoView();
 };
 const handleVisualViewportChange = () => {
   if (!editorFocused.value) {
@@ -738,17 +805,41 @@ const updateKeyboardInset = () => {
   }
 
   const viewport = window.visualViewport;
-  if (!viewport) {
-    keyboardInsetPx.value = 0;
-    resetScrollPaddingBottom();
-    return;
+  const viewportHeightWithOffset = viewport
+    ? viewport.height + viewport.offsetTop
+    : 0;
+  const baseline = Math.max(
+    viewportHeightBaselinePx,
+    window.innerHeight,
+    document.documentElement.clientHeight,
+    viewportHeightWithOffset,
+  );
+  const viewportKeyboardHeight = viewport
+    ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+    : 0;
+  const fallbackCandidates = [
+    Math.max(0, baseline - window.innerHeight),
+    Math.max(0, baseline - document.documentElement.clientHeight),
+    Math.max(0, baseline - viewportHeightWithOffset),
+  ];
+  const fallbackKeyboardHeight = Math.max(...fallbackCandidates);
+  let keyboardHeight = Math.max(
+    viewportKeyboardHeight,
+    fallbackKeyboardHeight >= KEYBOARD_FALLBACK_THRESHOLD_PX
+      ? fallbackKeyboardHeight
+      : 0,
+  );
+
+  if (
+    keyboardHeight <= 0 &&
+    isLikelyMobileViewport() &&
+    document.activeElement === editorTextareaRef.value
+  ) {
+    keyboardHeight = KEYBOARD_MIN_MOBILE_INSET_PX;
   }
 
-  const keyboardHeight = Math.max(
-    0,
-    window.innerHeight - viewport.height - viewport.offsetTop,
-  );
-  keyboardInsetPx.value = keyboardHeight > 0 ? keyboardHeight + 16 : 0;
+  keyboardInsetPx.value =
+    keyboardHeight > 0 ? keyboardHeight + KEYBOARD_INSET_EXTRA_PX : 0;
   applyScrollPaddingBottom();
 };
 const applyScrollPaddingBottom = () => {
@@ -759,6 +850,7 @@ const applyScrollPaddingBottom = () => {
   const value =
     keyboardInsetPx.value > 0 ? `${keyboardInsetPx.value + 24}px` : '';
   scrollContainer.style.scrollPaddingBottom = value;
+  scrollContainer.style.paddingBottom = value;
 };
 const resetScrollPaddingBottom = () => {
   const scrollContainer = resolveScrollContainer();
@@ -766,7 +858,41 @@ const resetScrollPaddingBottom = () => {
     return;
   }
   scrollContainer.style.scrollPaddingBottom = '';
+  scrollContainer.style.paddingBottom = '';
 };
+const stopFocusSync = () => {
+  if (focusSyncTimer !== null) {
+    window.clearTimeout(focusSyncTimer);
+    focusSyncTimer = null;
+  }
+  focusSyncTick = 0;
+};
+const runFocusSyncTick = () => {
+  if (!editorFocused.value) {
+    stopFocusSync();
+    return;
+  }
+  updateKeyboardInset();
+  scrollEditorIntoView();
+  focusSyncTick += 1;
+  if (focusSyncTick >= EDITOR_FOCUS_SYNC_TICKS) {
+    stopFocusSync();
+    return;
+  }
+  focusSyncTimer = window.setTimeout(
+    runFocusSyncTick,
+    EDITOR_FOCUS_SYNC_INTERVAL_MS,
+  );
+};
+const startFocusSync = () => {
+  stopFocusSync();
+  runFocusSyncTick();
+};
+const isRootScrollElement = (element: HTMLElement | null): boolean =>
+  !element ||
+  element === (document.scrollingElement as HTMLElement | null) ||
+  element === document.documentElement ||
+  element === document.body;
 const scrollEditorIntoView = () => {
   const textarea = editorTextareaRef.value;
   if (!textarea) {
@@ -788,85 +914,166 @@ const scrollEditorIntoView = () => {
   const bottomOverflow = rect.bottom - visibleBottom;
   const topOverflow = rect.top - visibleTop;
   const scrollContainer = resolveScrollContainer();
+  const canUseCustomScroller =
+    !!scrollContainer && !isRootScrollElement(scrollContainer);
 
   if (bottomOverflow > 0) {
-    if (scrollContainer && scrollContainer !== document.scrollingElement) {
+    if (canUseCustomScroller) {
       scrollContainer.scrollTop += bottomOverflow;
     } else {
       window.scrollBy({ top: bottomOverflow, behavior: 'auto' });
     }
   } else if (topOverflow < 0) {
-    if (scrollContainer && scrollContainer !== document.scrollingElement) {
+    if (canUseCustomScroller) {
       scrollContainer.scrollTop += topOverflow;
     } else {
       window.scrollBy({ top: topOverflow, behavior: 'auto' });
     }
   }
 
-  textarea.scrollIntoView({
-    block: 'nearest',
-    inline: 'nearest',
-  });
-};
-const updateEditorLayoutMetrics = () => {
-  const textarea = editorTextareaRef.value;
-  if (!textarea) {
-    return;
+  const caretPosition = textarea.selectionStart ?? textarea.value.length;
+  const textBeforeCaret = textarea.value.slice(0, caretPosition);
+  const caretSegments = textBeforeCaret.split('\n');
+  const caretLineIndex = Math.max(0, caretSegments.length - 1);
+  const caretLineFragment = caretSegments[caretLineIndex] ?? '';
+  const lines = textarea.value.split(/\r?\n/);
+  let caretTop = 0;
+  for (let index = 0; index < caretLineIndex; index += 1) {
+    caretTop += measuredLineHeights.value[index] ?? EDITOR_LINE_HEIGHT_PX;
   }
-
-  const style = window.getComputedStyle(textarea);
-  const fontSize = parseFloat(style.fontSize || '12');
-  const fontWeight = style.fontWeight || '400';
-  const fontFamily = style.fontFamily || 'monospace';
-  const charWidth = measureMonospaceCharWidth(fontSize, fontWeight, fontFamily);
-  const horizontalPadding =
-    parseFloat(style.paddingLeft || '0') +
-    parseFloat(style.paddingRight || '0');
-  const contentWidth = Math.max(1, textarea.clientWidth - horizontalPadding);
-  editorColumns.value = Math.max(
-    MIN_EDITOR_COLUMNS,
-    Math.floor(contentWidth / Math.max(1, charWidth)),
+  const caretRowInLine = Math.max(1, getWrappedRowsForText(caretLineFragment));
+  caretTop += (caretRowInLine - 1) * EDITOR_LINE_HEIGHT_PX;
+  const currentLineHeight =
+    measuredLineHeights.value[caretLineIndex] ??
+    getWrappedRowsForText(lines[caretLineIndex] ?? '') * EDITOR_LINE_HEIGHT_PX;
+  const caretBottom = Math.min(
+    caretTop + EDITOR_LINE_HEIGHT_PX,
+    caretTop + currentLineHeight,
   );
+  const visibleTopInTextarea = textarea.scrollTop;
+  const visibleBottomInTextarea = textarea.scrollTop + textarea.clientHeight;
+
+  if (caretBottom > visibleBottomInTextarea - EDITOR_LINE_HEIGHT_PX) {
+    textarea.scrollTop = Math.max(
+      0,
+      caretBottom - textarea.clientHeight + EDITOR_LINE_HEIGHT_PX * 2,
+    );
+    editorScrollTop.value = textarea.scrollTop;
+  } else if (caretTop < visibleTopInTextarea + EDITOR_LINE_HEIGHT_PX) {
+    textarea.scrollTop = Math.max(0, caretTop - EDITOR_LINE_HEIGHT_PX);
+    editorScrollTop.value = textarea.scrollTop;
+  }
 };
 const handleWindowViewportResize = () => {
-  updateEditorLayoutMetrics();
+  scheduleLineHeightMeasurement();
   if (!editorFocused.value) {
+    refreshViewportHeightBaseline();
     return;
   }
   updateKeyboardInset();
   scrollEditorIntoView();
 };
 const setupEditorMetricsObserver = () => {
-  updateEditorLayoutMetrics();
-
-  if (typeof ResizeObserver !== 'undefined' && editorTextareaRef.value) {
-    editorResizeObserver = new ResizeObserver(() => {
-      updateEditorLayoutMetrics();
-    });
-    editorResizeObserver.observe(editorTextareaRef.value);
-  }
-
   window.addEventListener('resize', handleWindowViewportResize);
-};
-const measureMonospaceCharWidth = (
-  fontSize: number,
-  fontWeight: string,
-  fontFamily: string,
-): number => {
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('2d');
-  if (!context) {
-    return 7;
+  const textarea = editorTextareaRef.value;
+  if (typeof ResizeObserver !== 'undefined' && textarea) {
+    editorResizeObserver?.disconnect();
+    editorResizeObserver = new ResizeObserver(() => {
+      scheduleLineHeightMeasurement();
+    });
+    editorResizeObserver.observe(textarea);
   }
-  context.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
-  return context.measureText('M').width || 7;
 };
-const getWrappedRows = (line: string): number => {
-  const normalizedLine = line.replace(/\t/g, '  ');
-  const length = Math.max(1, normalizedLine.length);
-  const columns = Math.max(MIN_EDITOR_COLUMNS, editorColumns.value);
-  return Math.max(1, Math.ceil(length / columns));
+const scheduleLineHeightMeasurement = () => {
+  if (lineHeightMeasureRafId !== null) {
+    window.cancelAnimationFrame(lineHeightMeasureRafId);
+  }
+  lineHeightMeasureRafId = window.requestAnimationFrame(() => {
+    lineHeightMeasureRafId = null;
+    measureLineHeights();
+  });
 };
+const measureLineHeights = () => {
+  const highlight = editorHighlightRef.value;
+  if (!highlight) {
+    return;
+  }
+  const lineElements = highlight.querySelectorAll<HTMLElement>('.mf-line');
+  if (lineElements.length === 0) {
+    measuredLineHeights.value = [EDITOR_LINE_HEIGHT_PX];
+    return;
+  }
+  measuredLineHeights.value = Array.from(lineElements, (lineElement) =>
+    Math.max(EDITOR_LINE_HEIGHT_PX, Math.round(lineElement.offsetHeight)),
+  );
+};
+const ensureWrapMeasureElement = () => {
+  if (wrapMeasureElement) {
+    return wrapMeasureElement;
+  }
+  wrapMeasureElement = document.createElement('div');
+  wrapMeasureElement.style.position = 'absolute';
+  wrapMeasureElement.style.left = '-99999px';
+  wrapMeasureElement.style.top = '-99999px';
+  wrapMeasureElement.style.visibility = 'hidden';
+  wrapMeasureElement.style.pointerEvents = 'none';
+  wrapMeasureElement.style.whiteSpace = 'pre-wrap';
+  wrapMeasureElement.style.overflowWrap = 'anywhere';
+  wrapMeasureElement.style.wordBreak = 'break-word';
+  wrapMeasureElement.style.boxSizing = 'border-box';
+  wrapMeasureElement.style.padding = '0';
+  wrapMeasureElement.style.margin = '0';
+  wrapMeasureElement.style.border = '0';
+  document.body.appendChild(wrapMeasureElement);
+  return wrapMeasureElement;
+};
+const getWrapMeasureWidth = () => {
+  const textarea = editorTextareaRef.value;
+  if (!textarea) {
+    return 0;
+  }
+  const styles = window.getComputedStyle(textarea);
+  const horizontalPadding =
+    parseFloat(styles.paddingLeft || '0') +
+    parseFloat(styles.paddingRight || '0');
+  return Math.max(1, textarea.clientWidth - horizontalPadding);
+};
+const getWrappedRowsForText = (text: string): number => {
+  const textarea = editorTextareaRef.value;
+  if (!textarea) {
+    return 1;
+  }
+  const measureElement = ensureWrapMeasureElement();
+  const styles = window.getComputedStyle(textarea);
+  const width = getWrapMeasureWidth();
+  measureElement.style.width = `${width}px`;
+  measureElement.style.fontFamily = styles.fontFamily;
+  measureElement.style.fontSize = styles.fontSize;
+  measureElement.style.fontWeight = styles.fontWeight;
+  measureElement.style.fontStyle = styles.fontStyle;
+  measureElement.style.letterSpacing = styles.letterSpacing;
+  measureElement.style.lineHeight = styles.lineHeight;
+  measureElement.style.tabSize = styles.tabSize;
+  measureElement.textContent =
+    text.length > 0 ? text.replace(/\t/g, '  ') : ' ';
+  const measuredHeight = Math.max(
+    EDITOR_LINE_HEIGHT_PX,
+    Math.round(measureElement.offsetHeight),
+  );
+  return Math.max(1, Math.ceil(measuredHeight / EDITOR_LINE_HEIGHT_PX));
+};
+const refreshViewportHeightBaseline = () => {
+  viewportHeightBaselinePx = Math.max(
+    viewportHeightBaselinePx,
+    window.innerHeight,
+    document.documentElement.clientHeight,
+    window.visualViewport
+      ? window.visualViewport.height + window.visualViewport.offsetTop
+      : 0,
+  );
+};
+const isLikelyMobileViewport = (): boolean =>
+  window.innerWidth <= 900 || window.matchMedia('(pointer: coarse)').matches;
 
 const buildHighlightedLine = (line: string): string => {
   if (!line) {
@@ -903,7 +1110,7 @@ const buildHighlightedLine = (line: string): string => {
     : '<span class="mf-token mf-selector-empty">&nbsp;</span>';
 
   return [
-    domainHtml,
+    `<span class="mf-domain-group">${domainHtml || '&nbsp;'}</span>`,
     `<span class="mf-token-group">`,
     `<span class="mf-token ${markerClass}">${escapeHtml(marker)}</span>`,
     `<span class="mf-token mf-selector">${selectorHtml}</span>`,
@@ -1003,21 +1210,22 @@ const copyToClipboard = async (text: string) => {
   top: 0;
   left: 0;
   right: 0;
+  z-index: 1;
   pointer-events: none;
-  min-height: 240px;
-  overflow: visible;
+  overflow: hidden;
   color: hsl(var(--foreground));
 }
 
 .my-filters-editor__textarea {
   position: relative;
+  z-index: 2;
   border: 0;
   outline: none;
   resize: none;
   background: transparent;
-  color: transparent;
+  color: hsl(var(--foreground) / 0.01);
+  -webkit-text-fill-color: transparent;
   caret-color: hsl(var(--foreground));
-  height: 240px;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -1040,12 +1248,15 @@ const copyToClipboard = async (text: string) => {
 }
 
 .my-filters-editor__highlight .mf-token-group {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.35rem;
-  margin-left: 0.35rem;
-  max-width: calc(100% - 0.35rem);
-  flex-wrap: wrap;
+  display: inline;
+  margin-left: 0;
+  background: transparent;
+  box-shadow: inset 0 -0.45em rgba(34, 197, 94, 0.08);
+}
+
+.my-filters-editor__highlight .mf-domain-group {
+  background: transparent;
+  box-shadow: inset 0 -0.45em rgba(96, 165, 250, 0.08);
 }
 
 .my-filters-editor__highlight .mf-comment {
@@ -1055,7 +1266,6 @@ const copyToClipboard = async (text: string) => {
 
 .my-filters-editor__highlight .mf-domain {
   color: #60a5fa;
-  font-weight: 600;
   text-shadow: 0 0 10px rgba(96, 165, 250, 0.25);
 }
 
@@ -1065,18 +1275,17 @@ const copyToClipboard = async (text: string) => {
 
 .my-filters-editor__highlight .mf-marker {
   color: #f59e0b;
-  font-weight: 700;
+  text-shadow: 0 0 8px rgba(245, 158, 11, 0.28);
 }
 
 .my-filters-editor__highlight .mf-exception {
   color: #fb7185;
-  font-weight: 700;
+  text-shadow: 0 0 8px rgba(251, 113, 133, 0.28);
 }
 
 .my-filters-editor__highlight .mf-selector {
   color: #22c55e;
-  padding-left: 0.35rem;
-  border-left: 1px dashed rgba(34, 197, 94, 0.6);
+  padding-left: 0;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
