@@ -166,7 +166,7 @@
     "confirmDeleteSelected": "确定要删除选中的 {count} 个规则吗？",
     "myFiltersTitle": "我的过滤器",
     "myFiltersDescription": "管理自定义元素隐藏规则。该规则与翻译黑白名单独立。",
-    "enableMyCustomFilters": "启用我的自定义过滤器",
+    "enableMyCustomFilters": "自定义过滤器",
     "myFiltersTextareaPlaceholder": "example.com##.ad-banner\nexample.com##.fixed-bottom.navbar-light",
     "myFiltersHint": "每行一条规则，格式为 domain##selector。以 ! 开头可写注释。",
     "applyFiltersText": "应用",

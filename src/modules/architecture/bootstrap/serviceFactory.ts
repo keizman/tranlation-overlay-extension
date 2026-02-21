@@ -56,7 +56,10 @@ export function createArchitectureServices(adapters: AdapterBundle) {
   const speechBoundaryService = new SpeechBoundaryService(
     adapters.speechBoundaryPort,
   );
-  const readingService = new ReadingService(adapters.selectionPort);
+  const readingService = new ReadingService(
+    adapters.selectionPort,
+    adapters.pageLanguagePort,
+  );
   const writingService = new WritingService(
     adapters.clipboardPort,
     adapters.textInjectionPort,

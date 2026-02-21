@@ -22,16 +22,19 @@ export async function queryWord(
   apiEndpoint: string,
   language: string = 'en',
 ): Promise<DictionaryResponse> {
-  const normalizedWord = word.toLowerCase();
-  const url = `${apiEndpoint}/api/v2/entries/${language}/${encodeURIComponent(normalizedWord)}`;
-  const queryKey = `${apiEndpoint}|${language}|${normalizedWord}`;
+  const normalizedLanguage = (language || 'en').trim().toLowerCase() || 'en';
+  const trimmedWord = word.trim();
+  const requestWord =
+    normalizedLanguage === 'en' ? trimmedWord.toLowerCase() : trimmedWord;
+  const url = `${apiEndpoint}/api/v2/entries/${normalizedLanguage}/${encodeURIComponent(requestWord)}`;
+  const queryKey = `${apiEndpoint}|${normalizedLanguage}|${requestWord}`;
   const now = Date.now();
   const cachedResult = RECENT_RESULTS.get(queryKey);
   if (cachedResult && now - cachedResult.ts <= RECENT_RESULT_TTL_MS) {
     logger.log('Query deduplicated by recent cache', {
       word,
-      normalizedWord,
-      language,
+      requestWord,
+      language: normalizedLanguage,
       apiEndpoint,
       requestUrl: url,
       ttlMs: RECENT_RESULT_TTL_MS,
@@ -44,8 +47,8 @@ export async function queryWord(
   if (inFlightRequest) {
     logger.log('Query deduplicated by in-flight request', {
       word,
-      normalizedWord,
-      language,
+      requestWord,
+      language: normalizedLanguage,
       apiEndpoint,
       requestUrl: url,
     });
@@ -56,8 +59,8 @@ export async function queryWord(
     const startedAt = performance.now();
     logger.log('Query start', {
       word,
-      normalizedWord,
-      language,
+      requestWord,
+      language: normalizedLanguage,
       apiEndpoint,
       requestUrl: url,
     });

@@ -55,9 +55,9 @@ function readManifest() {
     throw new Error('manifest.json 中缺少 browser_specific_settings.gecko.id');
   }
 
-  console.log(`📦 扩展: ${manifest.name}`);
-  console.log(`📌 版本: ${version}`);
-  console.log(`🆔 ID: ${extensionId}`);
+  console.log(`扩展: ${manifest.name}`);
+  console.log(`版本: ${version}`);
+  console.log(`ID: ${extensionId}`);
 
   return { version, extensionId, name: manifest.name };
 }
@@ -74,7 +74,7 @@ async function createXPI(version) {
   const xpiFilename = `side-translation-${version}.xpi`;
   const xpiPath = resolve(CONFIG.outputDir, xpiFilename);
 
-  console.log(`\n📦 正在打包 XPI...`);
+  console.log(`\n正在打包 XPI...`);
   console.log(`   源目录: ${CONFIG.sourceDir}`);
   console.log(`   输出: ${xpiPath}`);
 
@@ -85,7 +85,7 @@ async function createXPI(version) {
     });
 
     output.on('close', () => {
-      console.log(`✅ XPI 打包完成: ${archive.pointer()} bytes`);
+      console.log(`XPI 打包完成: ${archive.pointer()} bytes`);
       resolve(xpiPath);
     });
 
@@ -126,9 +126,9 @@ function generateUpdateJson(extensionId, version, xpiFilename, sha256) {
   if (existsSync(updateJsonPath)) {
     try {
       updateData = JSON.parse(readFileSync(updateJsonPath, 'utf-8'));
-      console.log(`\n📄 读取现有 update.json`);
+      console.log(`\n读取现有 update.json`);
     } catch (_e) {
-      console.log(`\n📄 创建新的 update.json`);
+      console.log(`\n创建新的 update.json`);
     }
   }
 
@@ -151,11 +151,11 @@ function generateUpdateJson(extensionId, version, xpiFilename, sha256) {
   if (existingIndex >= 0) {
     // 更新现有版本
     updates[existingIndex] = updateEntry;
-    console.log(`🔄 更新版本 ${version}`);
+    console.log(`更新版本 ${version}`);
   } else {
     // 添加新版本
     updates.push(updateEntry);
-    console.log(`➕ 添加版本 ${version}`);
+    console.log(`添加版本 ${version}`);
   }
 
   // 按版本号排序 (降序，最新版本在前)
@@ -171,7 +171,7 @@ function generateUpdateJson(extensionId, version, xpiFilename, sha256) {
 
   // 写入 update.json
   writeFileSync(updateJsonPath, JSON.stringify(updateData, null, 2), 'utf-8');
-  console.log(`✅ update.json 已更新: ${updateJsonPath}`);
+  console.log(`update.json 已更新: ${updateJsonPath}`);
 
   return updateJsonPath;
 }
@@ -180,7 +180,7 @@ function generateUpdateJson(extensionId, version, xpiFilename, sha256) {
  * 主函数
  */
 async function main() {
-  console.log('🚀 Firefox XPI 打包脚本\n');
+  console.log('Firefox XPI 打包脚本\n');
   console.log('='.repeat(50));
 
   try {
@@ -192,7 +192,7 @@ async function main() {
     const xpiFilename = `side-translation-${version}.xpi`;
 
     // 3. 计算 SHA256
-    console.log(`\n🔐 计算 SHA256...`);
+    console.log(`\n计算 SHA256...`);
     const sha256 = calculateSHA256(xpiPath);
     console.log(`   SHA256: ${sha256}`);
 
@@ -201,17 +201,17 @@ async function main() {
 
     // 5. 输出总结
     console.log('\n' + '='.repeat(50));
-    console.log('✨ 打包完成!\n');
-    console.log('📁 输出文件:');
+    console.log('打包完成!\n');
+    console.log('输出文件:');
     console.log(`   - ${CONFIG.outputDir}/${xpiFilename}`);
     console.log(`   - ${CONFIG.outputDir}/update.json`);
-    console.log('\n📤 部署说明:');
+    console.log('\n部署说明:');
     console.log(`   1. 上传 ${xpiFilename} 到: ${CONFIG.baseUrl}/`);
     console.log(
       `   2. 上传 update.json 到: https://storage.planktonfly.com/updates/`,
     );
   } catch (error) {
-    console.error('\n❌ 错误:', error.message);
+    console.error('\n错误:', error.message);
     process.exit(1);
   }
 }

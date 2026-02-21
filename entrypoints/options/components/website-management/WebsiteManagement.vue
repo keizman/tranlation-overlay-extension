@@ -402,12 +402,70 @@
           >
             {{ $t('websiteManagement.revertFiltersText') }}
           </Button>
-          <span class="text-sm text-muted-foreground">
+
+          <div
+            class="hidden sm:block w-px h-6 bg-border mx-1"
+            aria-hidden="true"
+          />
+
+          <Button
+            variant="outline"
+            @click="downloadCustomFiltersFromCloud"
+            :disabled="
+              downloadingCloudFilters ||
+              uploadingCloudFilters ||
+              !hasCloudSyncUser
+            "
+            size="sm"
+            class="gap-1.5"
+            title="Requires login"
+          >
+            <Download v-if="!downloadingCloudFilters" class="w-3.5 h-3.5" />
+            <Loader2 v-else class="w-3.5 h-3.5 animate-spin" />
+            Download from Cloud
+          </Button>
+          <Button
+            variant="outline"
+            @click="uploadCustomFiltersToCloud"
+            :disabled="
+              uploadingCloudFilters ||
+              downloadingCloudFilters ||
+              !hasCloudSyncUser
+            "
+            size="sm"
+            class="gap-1.5"
+            title="Requires login"
+          >
+            <Upload v-if="!uploadingCloudFilters" class="w-3.5 h-3.5" />
+            <Loader2 v-else class="w-3.5 h-3.5 animate-spin" />
+            Upload to Cloud
+          </Button>
+
+          <span class="text-xs text-muted-foreground ml-auto">
             {{
               $t('websiteManagement.customFiltersLineCount', {
                 count: customFiltersLineCount,
               })
             }}
+          </span>
+          <Transition name="cloud-status">
+            <span
+              v-if="cloudSyncMessage"
+              class="text-xs font-medium"
+              :class="
+                cloudSyncError
+                  ? 'text-destructive'
+                  : 'text-green-600 dark:text-green-400'
+              "
+            >
+              {{ cloudSyncMessage }}
+            </span>
+          </Transition>
+          <span
+            v-if="!hasCloudSyncUser"
+            class="text-xs text-muted-foreground font-medium"
+          >
+            Login required for cloud sync
           </span>
         </div>
       </CardContent>
@@ -427,13 +485,16 @@ import {
 import { useI18n } from 'vue-i18n';
 import {
   Copy,
+  Download,
   Edit3,
   Globe,
   Heart,
+  Loader2,
   Plus,
   Search,
   Shield,
   Trash2,
+  Upload,
 } from 'lucide-vue-next';
 import { browser } from 'wxt/browser';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -456,10 +517,13 @@ import {
 import { WebsiteManager } from '@/src/modules/options/website-management/manager';
 import { WebsiteRule } from '@/src/modules/options/website-management/types';
 import { MessageType } from '@/src/modules/core/messaging/types';
+import { httpClient } from '@/src/modules/auth/RequestInterceptor';
 import WebsiteRuleDialog from './WebsiteRuleDialog.vue';
 
 const { t } = useI18n();
 const manager = new WebsiteManager();
+const WEBSITE_FILTERS_CONF_KEY = 'website_filters_text';
+const WEBSITE_FILTERS_CLOUD_ENDPOINT = `/api/business/conf/${WEBSITE_FILTERS_CONF_KEY}`;
 const BASE_EDITOR_HEIGHT_PX = 240;
 const MIN_EDITOR_HEIGHT_PX = 120;
 const EDITOR_LINE_HEIGHT_PX = 20;
@@ -481,6 +545,11 @@ const selectedRules = ref<string[]>([]);
 const selectAll = ref(false);
 const showAddDialog = ref(false);
 const editingRule = ref<WebsiteRule | null>(null);
+const uploadingCloudFilters = ref(false);
+const downloadingCloudFilters = ref(false);
+const cloudSyncMessage = ref('');
+const cloudSyncError = ref(false);
+const cloudSyncUserId = ref('');
 
 const blacklistCount = computed(
   () => allRules.value.filter((rule) => rule.type === 'blacklist').length,
@@ -509,6 +578,7 @@ const filteredRules = computed(() => {
 const hasCustomFiltersChanges = computed(
   () => customFiltersDraft.value !== customFiltersText.value,
 );
+const hasCloudSyncUser = computed(() => cloudSyncUserId.value.length > 0);
 const editorHighlightRef = ref<HTMLElement | null>(null);
 const editorTextareaRef = ref<HTMLTextAreaElement | null>(null);
 const editorScrollTop = ref(0);
@@ -584,12 +654,14 @@ const editorTextareaStyle = computed(() => ({
 }));
 
 onMounted(async () => {
+  await refreshCloudSyncIdentity();
   await loadSettings();
   await nextTick();
   setupEditorMetricsObserver();
   scheduleLineHeightMeasurement();
   refreshViewportHeightBaseline();
   resolveScrollContainer();
+  browser.storage.onChanged.addListener(handleCloudSyncStorageChange);
   window.visualViewport?.addEventListener('resize', handleVisualViewportChange);
   window.visualViewport?.addEventListener('scroll', handleVisualViewportChange);
 });
@@ -614,6 +686,7 @@ onBeforeUnmount(() => {
     'scroll',
     handleVisualViewportChange,
   );
+  browser.storage.onChanged.removeListener(handleCloudSyncStorageChange);
   resetScrollPaddingBottom();
 });
 watch(customFiltersDraft, async () => {
@@ -748,6 +821,127 @@ const saveCustomFiltersText = async () => {
 
 const resetCustomFiltersDraft = () => {
   customFiltersDraft.value = customFiltersText.value;
+};
+const showCloudSyncStatus = (message: string, isError = false) => {
+  cloudSyncMessage.value = message;
+  cloudSyncError.value = isError;
+  window.setTimeout(() => {
+    if (cloudSyncMessage.value === message) {
+      cloudSyncMessage.value = '';
+    }
+  }, 3500);
+};
+const normalizeStorageString = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
+const refreshCloudSyncIdentity = async () => {
+  try {
+    const stored = await browser.storage.local.get('userId');
+    cloudSyncUserId.value = normalizeStorageString(stored?.userId);
+  } catch (error) {
+    console.error('Failed to read cloud sync identity:', error);
+    cloudSyncUserId.value = '';
+  }
+};
+type StorageChangeLike = { newValue?: unknown };
+const handleCloudSyncStorageChange = (
+  changes: Record<string, StorageChangeLike>,
+  areaName: string,
+) => {
+  if (areaName !== 'local' || !changes.userId) {
+    return;
+  }
+  cloudSyncUserId.value = normalizeStorageString(changes.userId.newValue);
+};
+const ensureCloudSyncUser = async (): Promise<boolean> => {
+  await refreshCloudSyncIdentity();
+  if (hasCloudSyncUser.value) {
+    return true;
+  }
+  showCloudSyncStatus('Please log in to use cloud sync', true);
+  return false;
+};
+const readResponseMessage = async (
+  response: Response,
+  fallback: string,
+): Promise<string> => {
+  try {
+    const payload = await response.clone().json();
+    if (typeof payload?.error === 'string' && payload.error.trim()) {
+      return payload.error;
+    }
+  } catch {
+    // ignore json parse failure, use fallback
+  }
+  return fallback;
+};
+const extractCloudFiltersText = (value: unknown): string => {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (
+    value &&
+    typeof value === 'object' &&
+    typeof (value as { text?: unknown }).text === 'string'
+  ) {
+    return (value as { text: string }).text;
+  }
+  return '';
+};
+const uploadCustomFiltersToCloud = async () => {
+  if (uploadingCloudFilters.value) return;
+  if (!(await ensureCloudSyncUser())) return;
+  uploadingCloudFilters.value = true;
+  try {
+    const response = await httpClient.put(WEBSITE_FILTERS_CLOUD_ENDPOINT, {
+      value: { text: customFiltersDraft.value },
+    });
+    if (!response.ok) {
+      const message = await readResponseMessage(
+        response,
+        'Upload to cloud failed',
+      );
+      throw new Error(message);
+    }
+    showCloudSyncStatus('Uploaded to cloud');
+  } catch (error) {
+    console.error('Failed to upload custom filters to cloud:', error);
+    showCloudSyncStatus(
+      error instanceof Error ? error.message : 'Upload to cloud failed',
+      true,
+    );
+  } finally {
+    uploadingCloudFilters.value = false;
+  }
+};
+const downloadCustomFiltersFromCloud = async () => {
+  if (downloadingCloudFilters.value) return;
+  if (!(await ensureCloudSyncUser())) return;
+  downloadingCloudFilters.value = true;
+  try {
+    const response = await httpClient.get(WEBSITE_FILTERS_CLOUD_ENDPOINT);
+    if (response.status === 404) {
+      showCloudSyncStatus('No cloud filters found', true);
+      return;
+    }
+    if (!response.ok) {
+      const message = await readResponseMessage(
+        response,
+        'Download from cloud failed',
+      );
+      throw new Error(message);
+    }
+    const payload = await response.json();
+    customFiltersDraft.value = extractCloudFiltersText(payload?.value);
+    showCloudSyncStatus('Downloaded from cloud into editor');
+  } catch (error) {
+    console.error('Failed to download custom filters from cloud:', error);
+    showCloudSyncStatus(
+      error instanceof Error ? error.message : 'Download from cloud failed',
+      true,
+    );
+  } finally {
+    downloadingCloudFilters.value = false;
+  }
 };
 const handleCustomFiltersEditorScroll = (event: Event) => {
   const target = event.target as HTMLTextAreaElement;
@@ -1296,5 +1490,15 @@ const copyToClipboard = async (text: string) => {
 
 .my-filters-editor__highlight .mf-plain {
   color: hsl(var(--foreground));
+}
+
+.cloud-status-enter-active,
+.cloud-status-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.cloud-status-enter-from,
+.cloud-status-leave-to {
+  opacity: 0;
 }
 </style>

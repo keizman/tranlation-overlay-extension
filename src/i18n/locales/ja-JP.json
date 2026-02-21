@@ -157,7 +157,7 @@
     "confirmDeleteSelected": "選択した {count} 件のルールを削除してもよろしいですか？",
     "myFiltersTitle": "My filters",
     "myFiltersDescription": "要素を非表示にするカスタムルールを管理します。翻訳のブラック/ホワイトリストとは独立しています。",
-    "enableMyCustomFilters": "My custom filters を有効化",
+    "enableMyCustomFilters": "カスタムフィルター",
     "myFiltersTextareaPlaceholder": "example.com##.ad-banner\nexample.com##.fixed-bottom.navbar-light",
     "myFiltersHint": "1 行に 1 ルール。形式: domain##selector。! でコメント。",
     "applyFiltersText": "適用",

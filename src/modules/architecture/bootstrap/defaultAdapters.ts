@@ -53,7 +53,10 @@ export const audioPlaybackService = new AudioPlaybackService(audioPlaybackPort);
 export const speechBoundaryService = new SpeechBoundaryService(
   speechBoundaryPort,
 );
-export const readingService = new ReadingService(selectionPort);
+export const readingService = new ReadingService(
+  selectionPort,
+  pageLanguagePort,
+);
 export const writingService = new WritingService(
   clipboardPort,
   textInjectionPort,

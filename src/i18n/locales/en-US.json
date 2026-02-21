@@ -166,7 +166,7 @@
     "confirmDeleteSelected": "Are you sure you want to delete the selected {count} rules?",
     "myFiltersTitle": "My filters",
     "myFiltersDescription": "Manage your custom element hiding rules. Rules are independent from translation blacklist/whitelist.",
-    "enableMyCustomFilters": "Enable my custom filters",
+    "enableMyCustomFilters": "Custom filters",
     "myFiltersTextareaPlaceholder": "example.com##.ad-banner\nexample.com##.fixed-bottom.navbar-light",
     "myFiltersHint": "One rule per line. Use domain##selector. Prefix with ! for comments.",
     "applyFiltersText": "Apply",

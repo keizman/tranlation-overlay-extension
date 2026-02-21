@@ -68,6 +68,7 @@ export class WordCardManager {
   private lastTriggerSource = '';
   private lastSelectionChangeShowAt = 0;
   private currentAudioSession: AudioPlaybackSession | null = null;
+  private currentQueryLanguage = 'en';
 
   // ============================================================================
   // 单例
@@ -231,14 +232,18 @@ export class WordCardManager {
       if (shouldShow) {
         if (this.settings.showExplainIcon) {
           // 显示查词图标
-          this.showIcon(info.text, {
-            x: info.rect.right + 5,
-            y: info.rect.top + info.rect.height / 2 - 14,
-          });
+          this.showIcon(
+            info.text,
+            {
+              x: info.rect.right + 5,
+              y: info.rect.top + info.rect.height / 2 - 14,
+            },
+            info.queryLanguage,
+          );
         } else {
           // 直接显示卡片
           const position = calculateCardPosition(info.rect);
-          this.showCard(info.text, position);
+          this.showCard(info.text, position, info.queryLanguage);
         }
       }
     }, 10);
@@ -336,13 +341,17 @@ export class WordCardManager {
       }
 
       if (this.settings.showExplainIcon) {
-        this.showIcon(info.text, {
-          x: info.rect.right + 5,
-          y: info.rect.top + info.rect.height / 2 - 14,
-        });
+        this.showIcon(
+          info.text,
+          {
+            x: info.rect.right + 5,
+            y: info.rect.top + info.rect.height / 2 - 14,
+          },
+          info.queryLanguage,
+        );
       } else {
         const position = calculateCardPosition(info.rect);
-        this.showCard(info.text, position);
+        this.showCard(info.text, position, info.queryLanguage);
       }
     }
   }
@@ -360,7 +369,7 @@ export class WordCardManager {
 
     if (shouldShow) {
       const position = calculateCardPosition(info.rect);
-      this.showCard(info.text, position);
+      this.showCard(info.text, position, info.queryLanguage);
     }
   }
 
@@ -405,7 +414,11 @@ export class WordCardManager {
   // 图标操作
   // ============================================================================
 
-  private showIcon(word: string, position: CardPosition): void {
+  private showIcon(
+    word: string,
+    position: CardPosition,
+    queryLanguage: string,
+  ): void {
     this.hideIcon();
 
     this.iconElement = document.createElement('div');
@@ -429,7 +442,7 @@ export class WordCardManager {
         } as DOMRect);
 
       this.hideIcon();
-      this.showCard(word, calculateCardPosition(rect));
+      this.showCard(word, calculateCardPosition(rect), queryLanguage);
     });
 
     document.body.appendChild(this.iconElement);
@@ -446,10 +459,17 @@ export class WordCardManager {
   // 卡片操作
   // ============================================================================
 
-  public async showCard(word: string, position: CardPosition): Promise<void> {
+  public async showCard(
+    word: string,
+    position: CardPosition,
+    queryLanguage: string = 'en',
+  ): Promise<void> {
+    this.currentQueryLanguage = queryLanguage || 'en';
+
     logger.log(`Showing card for: ${word}`, { position });
     logger.log('WordCard query request', {
       word,
+      language: this.currentQueryLanguage,
       apiEndpoint: this.settings.apiEndpoint,
     });
 
@@ -466,7 +486,11 @@ export class WordCardManager {
     this.renderCard();
 
     try {
-      const data = await queryWord(word, this.settings.apiEndpoint);
+      const data = await queryWord(
+        word,
+        this.settings.apiEndpoint,
+        this.currentQueryLanguage,
+      );
       this.state = {
         ...this.state,
         loading: false,
@@ -481,6 +505,7 @@ export class WordCardManager {
     } catch (err: any) {
       logger.error('Query failed', {
         word,
+        language: this.currentQueryLanguage,
         apiEndpoint: this.settings.apiEndpoint,
         error:
           err instanceof Error
@@ -537,6 +562,8 @@ export class WordCardManager {
       this.cardElement.innerHTML = createCardHTML(this.state.data, {
         starred: this.state.starred,
         pinned: this.state.pinned,
+        queryLanguage: this.currentQueryLanguage,
+        showEnglishDefinition: this.settings.showEnglishDefinition,
       });
     }
   }
@@ -570,7 +597,7 @@ export class WordCardManager {
         case 'lookup':
           const word = button.dataset.word;
           if (word) {
-            this.showCard(word, this.state.position);
+            this.showCard(word, this.state.position, this.currentQueryLanguage);
           }
           break;
         case 'menu':

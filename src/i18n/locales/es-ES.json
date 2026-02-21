@@ -157,7 +157,7 @@
     "confirmDeleteSelected": "¿Estás seguro de que quieres eliminar las {count} reglas seleccionadas?",
     "myFiltersTitle": "Mis filtros",
     "myFiltersDescription": "Administra tus reglas personalizadas para ocultar elementos. Son independientes de la lista blanca/negra de traducción.",
-    "enableMyCustomFilters": "Habilitar mis filtros personalizados",
+    "enableMyCustomFilters": "Filtros personalizados",
     "myFiltersTextareaPlaceholder": "example.com##.ad-banner\nexample.com##.fixed-bottom.navbar-light",
     "myFiltersHint": "Una regla por línea. Usa domain##selector. Prefijo ! para comentarios.",
     "applyFiltersText": "Aplicar",

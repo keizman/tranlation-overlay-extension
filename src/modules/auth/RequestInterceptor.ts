@@ -42,9 +42,8 @@ class RequestInterceptor {
 
   async init(): Promise<void> {
     if (this.tempId) return;
-
-    const stored = await chrome.storage.local.get('tempId');
-    this.tempId = stored.tempId;
+    await authManager.init();
+    this.tempId = await authManager.resolveTempID();
   }
 
   async fetch(
@@ -54,10 +53,8 @@ class RequestInterceptor {
   ): Promise<Response> {
     await this.init();
     await authManager.init();
-    if (!this.tempId) {
-      const stored = await chrome.storage.local.get('tempId');
-      this.tempId = stored.tempId || null;
-    }
+    const tempId = await authManager.resolveTempID();
+    this.tempId = tempId;
 
     const method = options.method || 'GET';
     let resolvedUrl = url;
@@ -97,6 +94,7 @@ class RequestInterceptor {
         options.body,
         timestamp,
         token,
+        tempId,
       );
     } catch (error) {
       logger.error('Failed to calculate request signature', {
@@ -111,8 +109,8 @@ class RequestInterceptor {
     const headers: Record<string, string> = {
       ...((options.headers as Record<string, string>) || {}),
       Authorization: `Bearer ${token}`,
-      'x-user-id': (await chrome.storage.local.get('userId')).userId || '',
-      'x-temp-id': this.tempId || '',
+      'x-user-id': await authManager.resolveUserID(),
+      'x-temp-id': tempId,
       'x-timestamp': timestamp,
       'x-nonce': nonce,
       'x-extension-id': this.extensionId,
@@ -120,7 +118,7 @@ class RequestInterceptor {
       'x-sign': sign,
     };
 
-    if (!this.tempId) {
+    if (!tempId) {
       logger.warn('Missing tempId in request headers', {
         url: resolvedUrl,
         method,
@@ -204,9 +202,9 @@ class RequestInterceptor {
     body: any,
     timestamp: string,
     token: string,
+    tempId: string,
   ): Promise<string> {
     let payload: string;
-    const tempId = this.tempId || '';
 
     if (method === 'GET') {
       const urlObj = new URL(url);

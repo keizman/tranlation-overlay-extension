@@ -157,7 +157,7 @@
     "confirmDeleteSelected": "선택한 {count}개의 규칙을 삭제하시겠습니까?",
     "myFiltersTitle": "내 필터",
     "myFiltersDescription": "사용자 지정 요소 숨김 규칙을 관리합니다. 번역 블랙/화이트리스트와 독립적으로 동작합니다.",
-    "enableMyCustomFilters": "내 사용자 필터 사용",
+    "enableMyCustomFilters": "사용자 필터",
     "myFiltersTextareaPlaceholder": "example.com##.ad-banner\nexample.com##.fixed-bottom.navbar-light",
     "myFiltersHint": "한 줄에 한 규칙. 형식: domain##selector. ! 로 주석 작성.",
     "applyFiltersText": "적용",

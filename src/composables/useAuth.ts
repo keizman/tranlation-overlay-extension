@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue';
 import { AuthConfig } from '@/src/modules/auth/config';
+import { authManager } from '@/src/modules/auth/AuthManager';
 import { createModuleLogger } from '@/src/modules/shared/utils/Report';
 
 const logger = createModuleLogger('useAuth');
@@ -21,6 +22,7 @@ const API_BASE = normalizeBaseUrl(
 );
 
 interface User {
+  id?: string;
   username: string;
   email: string;
   displayName?: string;
@@ -167,6 +169,16 @@ async function getResponseErrorMessage(
   }
 }
 
+function deriveUserIdFromStoredUser(user: User | null | undefined): string {
+  if (!user) return '';
+  const candidates = [user.id, user.email, user.username, user.displayName];
+  for (const candidate of candidates) {
+    const normalized = typeof candidate === 'string' ? candidate.trim() : '';
+    if (normalized) return normalized;
+  }
+  return '';
+}
+
 export function useAuth() {
   const isLoggedIn = computed(() => authState.value.isLoggedIn);
   const user = computed(() => authState.value.user);
@@ -179,10 +191,21 @@ export function useAuth() {
     checkAuthStatePromise = (async () => {
       try {
         const stored =
-          (await storageGet<{ authUser?: User | null }>('authUser')) || {};
+          (await storageGet<{ authUser?: User | null; userId?: string }>([
+            'authUser',
+            'userId',
+          ])) || {};
         if (stored.authUser) {
           authState.value.isLoggedIn = true;
           authState.value.user = stored.authUser;
+          const existingUserId =
+            typeof stored.userId === 'string' ? stored.userId.trim() : '';
+          if (!existingUserId) {
+            const derivedUserId = deriveUserIdFromStoredUser(stored.authUser);
+            if (derivedUserId) {
+              await storageSet({ userId: derivedUserId });
+            }
+          }
           return;
         }
 
@@ -298,6 +321,7 @@ export function useAuth() {
         .catch(() => ({}));
       const resolvedUserId = String(loginData.id || identity).trim();
       const userData: User = {
+        id: resolvedUserId,
         username: loginData.name || identity,
         email: identity.includes('@') ? identity : '',
         displayName: loginData.name || identity,
@@ -309,11 +333,13 @@ export function useAuth() {
       authState.value.isLoggedIn = true;
       authState.value.user = userData;
 
+      let syncedByMessage = false;
       try {
         const syncResult = await runtimeSendMessage({
           type: 'LOGIN_SUCCESS',
           userId: resolvedUserId,
         });
+        syncedByMessage = !!syncResult?.success;
         if (syncResult?.success === false) {
           logger.warn('Login sync message returned failure', {
             user: identity,
@@ -325,6 +351,23 @@ export function useAuth() {
           error:
             syncError instanceof Error ? syncError.message : String(syncError),
         });
+      }
+
+      if (!syncedByMessage) {
+        try {
+          await authManager.onLoginSuccess(resolvedUserId);
+          logger.log('Login sync fallback succeeded in options context', {
+            userId: resolvedUserId,
+          });
+        } catch (fallbackError) {
+          logger.warn('Login sync fallback failed in options context', {
+            userId: resolvedUserId,
+            error:
+              fallbackError instanceof Error
+                ? fallbackError.message
+                : String(fallbackError),
+          });
+        }
       }
 
       logger.log('Login request success', {
@@ -351,10 +394,12 @@ export function useAuth() {
       authState.value.isLoggedIn = false;
       authState.value.user = null;
 
+      let syncedByMessage = false;
       try {
         const syncResult = await runtimeSendMessage({
           type: 'LOGOUT',
         });
+        syncedByMessage = !!syncResult?.success;
         if (syncResult?.success === false) {
           logger.warn('Logout sync message returned failure', {
             response: syncResult,
@@ -365,6 +410,20 @@ export function useAuth() {
           error:
             syncError instanceof Error ? syncError.message : String(syncError),
         });
+      }
+
+      if (!syncedByMessage) {
+        try {
+          await authManager.onLogout();
+          logger.log('Logout sync fallback succeeded in options context');
+        } catch (fallbackError) {
+          logger.warn('Logout sync fallback failed in options context', {
+            error:
+              fallbackError instanceof Error
+                ? fallbackError.message
+                : String(fallbackError),
+          });
+        }
       }
 
       return { success: true };

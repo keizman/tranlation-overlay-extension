@@ -36,3 +36,5 @@ web-ext.config.ts
 web-ext-artifacts/
 
 dist/
+
+build-xpi-and-install-on-apk.ps1

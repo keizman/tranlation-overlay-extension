@@ -6,31 +6,13 @@ import type { WordCardSettings } from '../types';
 import { readingService } from '../../../architecture/bootstrap/defaultAdapters';
 
 /**
- * 判断是否为英文单词
- * 仅包含字母，无空格
- */
-export function isEnglishWord(text: string): boolean {
-  if (!text || text.length === 0) return false;
-  // 仅字母，可含连字符
-  return /^[a-zA-Z]+(-[a-zA-Z]+)*$/.test(text.trim());
-}
-
-/**
- * 判断是否为单个单词（无空格）
- */
-export function isSingleWord(text: string): boolean {
-  if (!text) return false;
-  const trimmed = text.trim();
-  return trimmed.length > 0 && !trimmed.includes(' ');
-}
-
-/**
  * 获取选中文本信息
  */
 export interface SelectionInfo {
   text: string;
   rect: DOMRect | null;
   isWord: boolean;
+  queryLanguage: string;
 }
 
 export function getSelectionInfo(): SelectionInfo | null {
@@ -43,6 +25,7 @@ export function getSelectionInfo(): SelectionInfo | null {
     text: snapshot.text,
     rect: snapshot.rect as DOMRect | null,
     isWord: snapshot.isWord,
+    queryLanguage: snapshot.queryLanguage,
   };
 }
 
@@ -59,8 +42,8 @@ export function shouldShowWordCard(
     return false;
   }
 
-  // 2. 是否为单个英文单词
-  if (!isSingleWord(text) || !isEnglishWord(text)) {
+  // 2. 选中文本不能为空
+  if (!text || !text.trim()) {
     return false;
   }
 

@@ -3,9 +3,53 @@
     "{ec1a757b-3969-4e9a-86e9-c9cd54028a1f}": {
       "updates": [
         {
+          "version": "1.8.16",
+          "update_link": "https://storage.planktonfly.com/updates/archive/side-translation-1.8.16.xpi",
+          "update_hash": "sha256:506a66488a4472b3b1a5cfdb8d5e75b082426fd9c40cd0cb054ac611bbceeef6"
+        },
+        {
+          "version": "1.8.15",
+          "update_link": "https://storage.planktonfly.com/updates/archive/side-translation-1.8.15.xpi",
+          "update_hash": "sha256:ac513fa9f9ee1d51e6c04a54df7a8c762d2f508d3c8508c3390680e496fc81ab"
+        },
+        {
+          "version": "1.8.14",
+          "update_link": "https://storage.planktonfly.com/updates/archive/side-translation-1.8.14.xpi",
+          "update_hash": "sha256:f9bfd1ce747a6f8f25bd4ba629df2afbfd72cf9995a86d03a7af394229015cc5"
+        },
+        {
+          "version": "1.8.13",
+          "update_link": "https://storage.planktonfly.com/updates/archive/side-translation-1.8.13.xpi",
+          "update_hash": "sha256:a1f1140739a37b22463c4a23fc56ec433ebeb576c9fdfdcd1b8c643102d888c8"
+        },
+        {
+          "version": "1.8.12",
+          "update_link": "https://storage.planktonfly.com/updates/archive/side-translation-1.8.12.xpi",
+          "update_hash": "sha256:2749bf6bbe2e0072360f80772d44f61bff165b38f58f9d4d489b63968c1abaef"
+        },
+        {
+          "version": "1.8.11",
+          "update_link": "https://storage.planktonfly.com/updates/archive/side-translation-1.8.11.xpi",
+          "update_hash": "sha256:e89c1e7913c3e04a71a81328193e153e9be2c359da9b58b651bbaebb5106f42d"
+        },
+        {
+          "version": "1.8.10",
+          "update_link": "https://storage.planktonfly.com/updates/archive/side-translation-1.8.10.xpi",
+          "update_hash": "sha256:0e5d56c3764bc05f9557a81ef02a6663fc7cc67769c46d08b6e839b0ad9826dd"
+        },
+        {
           "version": "1.8.1",
           "update_link": "https://storage.planktonfly.com/updates/archive/side-translation-1.8.1.xpi",
           "update_hash": "sha256:84b5305f63c240e31297143a9a58271b62a5cd82e57b014d9d01a308d9ed1aeb"
+        }
+      ]
+    },
+    "{11111111-2222-3333-4444-555555555555}": {
+      "updates": [
+        {
+          "version": "1.8.14",
+          "update_link": "https://storage.planktonfly.com/updates/archive/side-translation-1.8.14.xpi",
+          "update_hash": "sha256:845055fc970e51f14020fdb589d81adaa80b04d10a6a919e23138101397258e0"
         }
       ]
     }

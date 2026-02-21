@@ -34,9 +34,19 @@ const ICONS = {
  */
 export function createCardHTML(
   data: DictionaryResponse,
-  options: { starred?: boolean; pinned?: boolean } = {},
+  options: {
+    starred?: boolean;
+    pinned?: boolean;
+    queryLanguage?: string;
+    showEnglishDefinition?: boolean;
+  } = {},
 ): string {
-  const { starred = false, pinned = false } = options;
+  const {
+    starred = false,
+    pinned = false,
+    queryLanguage = 'en',
+    showEnglishDefinition = true,
+  } = options;
 
   return `
     <div class="wxt-word-card-header">
@@ -61,11 +71,15 @@ export function createCardHTML(
       </button>
     </div>
 
-    ${renderPhonetics(data.phonetics)}
+    ${renderPhonetics(data.phonetics, queryLanguage)}
 
     <div class="wxt-word-card-content">
-      ${renderTranslations(data.translations)}
-      ${renderDefinitions(data.definitions)}
+      ${renderTranslations(data.translations, queryLanguage)}
+      ${renderDefinitions(data.definitions, {
+        queryLanguage,
+        source: data.source,
+        showEnglishDefinition,
+      })}
       ${renderExchange(data.exchange)}
     </div>
 
@@ -85,9 +99,34 @@ export function createCardHTML(
 /**
  * 渲染音标区
  */
-function renderPhonetics(phonetics: DictionaryResponse['phonetics']): string {
-  // Always render US option for TTS fallback, or if US phonetics exist
-  // Render UK only if UK phonetics exist
+function renderPhonetics(
+  phonetics: DictionaryResponse['phonetics'],
+  queryLanguage: string,
+): string {
+  const normalizedLanguage = (queryLanguage || 'en').toLowerCase();
+  const hasUs = !!phonetics.us;
+  const hasUk = !!phonetics.uk;
+
+  if (normalizedLanguage !== 'en') {
+    // Non-EN dictionaries should not show fixed US/UK labels.
+    if (!hasUs && !hasUk) {
+      return '';
+    }
+
+    const accent: 'us' | 'uk' = hasUs ? 'us' : 'uk';
+    const phoneticText = phonetics.us || phonetics.uk || '';
+    return `
+      <div class="wxt-word-card-phonetics">
+        <div class="wxt-word-card-phonetic">
+          <button class="wxt-word-card-phonetic-btn" data-action="speak" data-accent="${accent}" title="${t('wordCardUI.pronunciation')}">
+            ${ICONS.volume}
+          </button>
+          <span class="wxt-word-card-phonetic-label">${t('wordCardUI.pronunciation')}</span>
+          ${phoneticText ? `<span class="wxt-word-card-phonetic-text">/${escapeHtml(phoneticText)}/</span>` : ''}
+        </div>
+      </div>
+    `;
+  }
 
   return `
     <div class="wxt-word-card-phonetics">
@@ -121,10 +160,14 @@ function renderPhonetics(phonetics: DictionaryResponse['phonetics']): string {
  */
 function renderTranslations(
   translations: DictionaryResponse['translations'],
+  queryLanguage: string,
 ): string {
   if (!translations || translations.length === 0) {
     return '';
   }
+  const normalizedLanguage = (queryLanguage || 'en').toLowerCase();
+  const titleKey =
+    normalizedLanguage === 'en' ? 'wordCardUI.enZh' : 'wordCardUI.translation';
 
   const items = translations
     .map((t, i) => {
@@ -148,7 +191,7 @@ function renderTranslations(
     <div class="wxt-word-card-dict">
       <div class="wxt-word-card-dict-header" data-action="toggle-dict">
         ${ICONS.chevronDown}
-        <span class="wxt-word-card-dict-name">${t('wordCardUI.enZh')}</span>
+        <span class="wxt-word-card-dict-name">${t(titleKey)}</span>
       </div>
       <div class="wxt-word-card-definitions">
         ${items}
@@ -162,16 +205,43 @@ function renderTranslations(
  */
 function renderDefinitions(
   definitions: DictionaryResponse['definitions'],
+  options: {
+    queryLanguage: string;
+    source: string;
+    showEnglishDefinition: boolean;
+  },
 ): string {
-  if (!definitions || definitions.length === 0) {
+  const normalizedLanguage = (options.queryLanguage || 'en').toLowerCase();
+  const isEnglishQuery = normalizedLanguage === 'en';
+  if (isEnglishQuery && !options.showEnglishDefinition) {
     return '';
   }
 
-  const items = definitions
-    .slice(0, 4)
+  if (!definitions || definitions.length === 0) {
+    return '';
+  }
+  const normalizedDefinitions = normalizeDefinitionsForDisplay(
+    definitions,
+    options.source,
+    normalizedLanguage,
+  );
+  if (normalizedDefinitions.length === 0) {
+    return '';
+  }
+  const maxItems = isEnglishQuery ? 4 : 8;
+  const dictTitle = resolveDefinitionDictionaryTitle(
+    normalizedLanguage,
+    options.source,
+  );
+
+  const items = normalizedDefinitions
+    .slice(0, maxItems)
     .map((d, i) => {
       const pos = d.partOfSpeech
         ? `<span class="wxt-word-card-definition-pos">${escapeHtml(d.partOfSpeech)}</span>`
+        : '';
+      const example = d.example
+        ? `<div class="wxt-word-card-definition-example">${escapeHtml(d.example)}</div>`
         : '';
       return `
       <div class="wxt-word-card-definition">
@@ -179,6 +249,7 @@ function renderDefinitions(
         <div class="wxt-word-card-definition-content">
           ${pos}
           <span class="wxt-word-card-definition-text">${escapeHtml(d.definition)}</span>
+          ${example}
         </div>
       </div>
     `;
@@ -189,7 +260,7 @@ function renderDefinitions(
     <div class="wxt-word-card-dict">
       <div class="wxt-word-card-dict-header" data-action="toggle-dict">
         ${ICONS.chevronDown}
-        <span class="wxt-word-card-dict-name">${t('wordCardUI.enEn')}</span>
+        <span class="wxt-word-card-dict-name">${dictTitle}</span>
       </div>
       <div class="wxt-word-card-definitions">
         ${items}
@@ -323,4 +394,147 @@ function escapeHtml(text: string): string {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+function resolveDefinitionDictionaryTitle(
+  queryLanguage: string,
+  source: string,
+): string {
+  if (queryLanguage === 'ja' || source === 'jaen_mac') {
+    return t('wordCardUI.jaEn');
+  }
+  if (queryLanguage === 'ko' || source === 'koen_mac') {
+    return t('wordCardUI.koEn');
+  }
+  if (queryLanguage === 'de' || source === 'deen_mac') {
+    return t('wordCardUI.deEn');
+  }
+  if (queryLanguage === 'ru' || source === 'ruen_mac') {
+    return t('wordCardUI.ruEn');
+  }
+  if (queryLanguage === 'en') {
+    return t('wordCardUI.enEn');
+  }
+  return t('wordCardUI.definitions');
+}
+
+function normalizeDefinitionsForDisplay(
+  definitions: DictionaryResponse['definitions'],
+  source: string,
+  queryLanguage: string,
+): DictionaryResponse['definitions'] {
+  const validDefinitions = definitions.filter((item) =>
+    Boolean(item?.definition?.trim()),
+  );
+  if (validDefinitions.length === 0) {
+    return [];
+  }
+
+  // For non-EN dictionaries, many entries come as one long merged paragraph.
+  const needsSplit =
+    validDefinitions.length === 1 &&
+    (queryLanguage !== 'en' ||
+      ['jaen_mac', 'koen_mac', 'deen_mac', 'ruen_mac'].includes(source));
+
+  if (!needsSplit) {
+    return validDefinitions;
+  }
+
+  const base = validDefinitions[0];
+  const chunks = splitMergedDefinition(base.definition);
+  if (chunks.length <= 1) {
+    return validDefinitions;
+  }
+
+  return chunks.map((chunk) => {
+    const { partOfSpeech, definition } = extractPartOfSpeech(chunk);
+    return {
+      partOfSpeech: partOfSpeech || base.partOfSpeech,
+      definition,
+      example: '',
+      synonyms: [],
+      antonyms: [],
+    };
+  });
+}
+
+function splitMergedDefinition(text: string): string[] {
+  const compact = text.replace(/\s+/g, ' ').trim();
+  if (!compact) {
+    return [];
+  }
+
+  const numberedSplits = splitByNumbering(compact);
+  if (numberedSplits.length > 1) {
+    return numberedSplits;
+  }
+
+  const bulletSplits = compact
+    .split(/\s*[▸•]\s*/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  if (bulletSplits.length > 1) {
+    return bulletSplits;
+  }
+
+  const semicolonSplits = compact
+    .split(/\s*[;；]\s*/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  if (semicolonSplits.length > 1) {
+    return semicolonSplits;
+  }
+
+  return [compact];
+}
+
+function splitByNumbering(text: string): string[] {
+  const markerRegex = /(?:^|\s)(\d{1,2})\.\s+/g;
+  const markers: Array<{ index: number }> = [];
+  let match: RegExpExecArray | null = null;
+
+  while ((match = markerRegex.exec(text)) !== null) {
+    const markerIndex = match.index + (match[0].startsWith(' ') ? 1 : 0);
+    markers.push({ index: markerIndex });
+  }
+
+  if (markers.length < 2) {
+    return [text];
+  }
+
+  const prefix = text.slice(0, markers[0].index).trim();
+  const result: string[] = [];
+
+  for (let i = 0; i < markers.length; i++) {
+    const start = markers[i].index;
+    const end = i + 1 < markers.length ? markers[i + 1].index : text.length;
+    let chunk = text.slice(start, end).trim();
+    if (!chunk) continue;
+
+    if (i === 0 && prefix) {
+      chunk = `${prefix} ${chunk}`.trim();
+    }
+    result.push(chunk);
+  }
+
+  return result.length > 0 ? result : [text];
+}
+
+function extractPartOfSpeech(raw: string): {
+  partOfSpeech: string;
+  definition: string;
+} {
+  const definition = raw.replace(/^\d{1,2}\.\s*/, '').trim();
+  const posMatch = definition.match(
+    /^(noun|verb|adjective|adverb|pronoun|preposition|conjunction|interjection|article|determiner)\b[:\s-]*/i,
+  );
+
+  if (!posMatch) {
+    return { partOfSpeech: '', definition };
+  }
+
+  return {
+    partOfSpeech: posMatch[1].toLowerCase(),
+    definition: definition.slice(posMatch[0].length).trim(),
+  };
 }
