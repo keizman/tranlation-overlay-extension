@@ -312,6 +312,10 @@ class AuthManager {
     return typeof value === 'string' ? value.trim() : '';
   }
 
+  private isLocalOnlyUserId(value: string): boolean {
+    return value.startsWith('local_');
+  }
+
   private async ensureTempId(value: unknown): Promise<string> {
     const existing = this.normalizeUserId(value);
     if (existing) {
@@ -349,10 +353,10 @@ class AuthManager {
 
     const profile = authUser as Record<string, unknown>;
     const candidates = [
-      profile.id,
       profile.userId,
       profile.email,
       profile.username,
+      profile.id,
       profile.displayName,
     ];
 
@@ -370,7 +374,7 @@ class AuthManager {
 
     const stored = await this.safeStorageGet(['userId', 'authUser']);
     const storedUserID = this.normalizeUserId(stored.userId);
-    if (storedUserID) {
+    if (storedUserID && !this.isLocalOnlyUserId(storedUserID)) {
       return storedUserID;
     }
 
@@ -384,6 +388,16 @@ class AuthManager {
         });
       }
       return derivedUserID;
+    }
+
+    if (storedUserID) {
+      logger.warn(
+        'Stored userId is local-only and cannot be used for cloud sync',
+        {
+          storedUserID,
+        },
+      );
+      return '';
     }
 
     return this.normalizeUserId(this.state?.userId);

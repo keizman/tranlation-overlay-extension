@@ -171,12 +171,21 @@ async function getResponseErrorMessage(
 
 function deriveUserIdFromStoredUser(user: User | null | undefined): string {
   if (!user) return '';
-  const candidates = [user.id, user.email, user.username, user.displayName];
+  const candidates = [user.email, user.username, user.id, user.displayName];
   for (const candidate of candidates) {
     const normalized = typeof candidate === 'string' ? candidate.trim() : '';
     if (normalized) return normalized;
   }
   return '';
+}
+
+function normalizeStableUserId(identity: string): string {
+  const normalized = identity.trim();
+  if (!normalized) return '';
+  if (normalized.includes('@')) {
+    return normalized.toLowerCase();
+  }
+  return normalized;
 }
 
 export function useAuth() {
@@ -319,11 +328,14 @@ export function useAuth() {
         .clone()
         .json()
         .catch(() => ({}));
-      const resolvedUserId = String(loginData.id || identity).trim();
+      const resolvedUserId = normalizeStableUserId(
+        String(loginData.email || identity),
+      );
+      const loginEmail = String(loginData.email || '').trim();
       const userData: User = {
-        id: resolvedUserId,
+        id: String(loginData.id || resolvedUserId).trim(),
         username: loginData.name || identity,
-        email: identity.includes('@') ? identity : '',
+        email: loginEmail || (identity.includes('@') ? identity : ''),
         displayName: loginData.name || identity,
         avatar: loginData.picture,
       };
